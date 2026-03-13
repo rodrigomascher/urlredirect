@@ -1,5 +1,15 @@
 const mongoose = require('mongoose');
 
+const revisaoSchema = new mongoose.Schema(
+  {
+    revisao: { type: Number, required: true },
+    urlDestino: { type: String, required: true },
+    inicioEm: { type: Date, required: true },
+    fimEm: { type: Date, default: null }
+  },
+  { _id: false, versionKey: false }
+);
+
 const linkSchema = new mongoose.Schema(
   {
     slug: {
@@ -14,6 +24,14 @@ const linkSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true
+    },
+    revisaoAtual: {
+      type: Number,
+      default: 1
+    },
+    revisoes: {
+      type: [revisaoSchema],
+      default: []
     },
     usuarioId: {
       type: mongoose.Schema.Types.ObjectId,

@@ -13,6 +13,11 @@ const accessLogSchema = new mongoose.Schema(
       required: true,
       index: true
     },
+    revisao: {
+      type: Number,
+      default: 1,
+      index: true
+    },
     usuarioId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -90,5 +95,6 @@ const accessLogSchema = new mongoose.Schema(
 );
 
 accessLogSchema.index({ usuarioId: 1, criadoEm: -1 });
+accessLogSchema.index({ linkId: 1, revisao: 1, criadoEm: -1 });
 
 module.exports = mongoose.model('AccessLog', accessLogSchema);

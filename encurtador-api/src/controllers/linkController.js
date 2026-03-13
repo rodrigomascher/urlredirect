@@ -39,7 +39,14 @@ const createLink = async (req, res) => {
   }
 
   try {
-    const link = await Link.create({ slug: slugNormalizado, urlDestino: urlDestinoNormalizada, usuarioId });
+    const agora = new Date();
+    const link = await Link.create({
+      slug: slugNormalizado,
+      urlDestino: urlDestinoNormalizada,
+      usuarioId,
+      revisaoAtual: 1,
+      revisoes: [{ revisao: 1, urlDestino: urlDestinoNormalizada, inicioEm: agora, fimEm: null }]
+    });
     return res.status(201).json(link);
   } catch (error) {
     if (error.code === 11000) {
@@ -67,15 +74,34 @@ const updateLinkDestino = async (req, res) => {
     return res.status(400).json({ message: 'urlDestino inválida. Use http(s).' });
   }
 
-  const updated = await Link.findOneAndUpdate(
-    { _id: id, usuarioId },
-    { urlDestino: urlDestino.trim() },
-    { new: true }
-  );
+  const urlDestinoNova = urlDestino.trim();
+  const agora = new Date();
 
-  if (!updated) {
+  const link = await Link.findOne({ _id: id, usuarioId });
+  if (!link) {
     return res.status(404).json({ message: 'Link não encontrado.' });
   }
+
+  if (link.urlDestino === urlDestinoNova) {
+    return res.json(link);
+  }
+
+  const novaRevisao = (link.revisaoAtual ?? 1) + 1;
+
+  // Fecha a revisão atual
+  const revisoesFechadas = (link.revisoes || []).map((r) => {
+    const obj = r.toObject ? r.toObject() : { ...r };
+    return obj.fimEm == null ? { ...obj, fimEm: agora } : obj;
+  });
+
+  // Adiciona a nova revisão
+  revisoesFechadas.push({ revisao: novaRevisao, urlDestino: urlDestinoNova, inicioEm: agora, fimEm: null });
+
+  const updated = await Link.findOneAndUpdate(
+    { _id: id, usuarioId },
+    { urlDestino: urlDestinoNova, revisaoAtual: novaRevisao, revisoes: revisoesFechadas },
+    { new: true }
+  );
 
   return res.json(updated);
 };
@@ -92,12 +118,22 @@ const getLast7DaysClicks = async (req, res) => {
   inicio.setDate(inicio.getDate() - (periodoDias - 1));
   inicio.setHours(0, 0, 0, 0);
 
+  const matchBase = {
+    usuarioId: new mongoose.Types.ObjectId(usuarioId),
+    criadoEm: { $gte: inicio, $lte: hoje }
+  };
+
+  if (req.query.linkId && mongoose.Types.ObjectId.isValid(req.query.linkId)) {
+    matchBase.linkId = new mongoose.Types.ObjectId(req.query.linkId);
+  }
+
+  if (req.query.revisao !== undefined) {
+    matchBase.revisao = Number(req.query.revisao);
+  }
+
   const aggregate = await AccessLog.aggregate([
     {
-      $match: {
-        usuarioId: new mongoose.Types.ObjectId(usuarioId),
-        criadoEm: { $gte: inicio, $lte: hoje }
-      }
+      $match: matchBase
     },
     {
       $group: {
@@ -138,6 +174,14 @@ const getSegmentationMetrics = async (req, res) => {
     usuarioId: new mongoose.Types.ObjectId(usuarioId),
     criadoEm: { $gte: inicio }
   };
+
+  if (req.query.linkId && mongoose.Types.ObjectId.isValid(req.query.linkId)) {
+    baseMatch.linkId = new mongoose.Types.ObjectId(req.query.linkId);
+  }
+
+  if (req.query.revisao !== undefined) {
+    baseMatch.revisao = Number(req.query.revisao);
+  }
 
   const [dispositivos, plataformas, origens, paises, cidades, horas, referers, total] = await Promise.all([
     AccessLog.aggregate([
@@ -204,10 +248,48 @@ const getSegmentationMetrics = async (req, res) => {
   });
 };
 
+const getRevisions = async (req, res) => {
+  const usuarioId = req.usuario.id;
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: 'ID inválido.' });
+  }
+
+  const link = await Link.findOne({ _id: id, usuarioId }, { revisoes: 1, revisaoAtual: 1, slug: 1, urlDestino: 1 });
+  if (!link) {
+    return res.status(404).json({ message: 'Link não encontrado.' });
+  }
+
+  // Conta cliques por revisão
+  const clicksPorRevisao = await AccessLog.aggregate([
+    { $match: { linkId: new mongoose.Types.ObjectId(id) } },
+    { $group: { _id: '$revisao', cliques: { $sum: 1 } } }
+  ]);
+
+  const mapaCliques = new Map(clicksPorRevisao.map((r) => [r._id, r.cliques]));
+
+  const revisoes = (link.revisoes || []).map((r) => ({
+    revisao: r.revisao,
+    urlDestino: r.urlDestino,
+    inicioEm: r.inicioEm,
+    fimEm: r.fimEm,
+    cliques: mapaCliques.get(r.revisao) || 0
+  }));
+
+  return res.json({
+    slug: link.slug,
+    urlDestino: link.urlDestino,
+    revisaoAtual: link.revisaoAtual,
+    revisoes
+  });
+};
+
 module.exports = {
   listLinks,
   createLink,
   updateLinkDestino,
+  getRevisions,
   getLast7DaysClicks,
   getSegmentationMetrics
 };

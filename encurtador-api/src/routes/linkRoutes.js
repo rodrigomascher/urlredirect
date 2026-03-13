@@ -3,6 +3,7 @@ const {
   createLink,
   getLast7DaysClicks,
   getSegmentationMetrics,
+  getRevisions,
   listLinks,
   updateLinkDestino
 } = require('../controllers/linkController');
@@ -16,6 +17,7 @@ router.use(authMiddleware, requireUser);
 router.get('/', asyncHandler(listLinks));
 router.post('/', asyncHandler(createLink));
 router.patch('/:id', asyncHandler(updateLinkDestino));
+router.get('/:id/revisoes', asyncHandler(getRevisions));
 router.get('/metrics/last-7-days', asyncHandler(getLast7DaysClicks));
 router.get('/metrics/segmentation', asyncHandler(getSegmentationMetrics));
 

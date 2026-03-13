@@ -104,6 +104,7 @@ const redirectBySlug = async (req, res) => {
   void AccessLog.create({
     linkId: link._id,
     slug: link.slug,
+    revisao: link.revisaoAtual ?? 1,
     usuarioId: link.usuarioId,
     dispositivo,
     plataforma,
