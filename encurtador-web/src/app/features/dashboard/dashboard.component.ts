@@ -1,0 +1,454 @@
+import { CommonModule } from '@angular/common';
+import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild, inject } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Router } from '@angular/router';
+import { Chart, CategoryScale, LinearScale, BarController, BarElement, Tooltip } from 'chart.js';
+import QRCode from 'qrcode';
+import { Subject, takeUntil } from 'rxjs';
+import { AuthService } from '../../core/services/auth.service';
+import { LinkService } from '../../core/services/link.service';
+import {
+  ClickByDay,
+  CliquesPorCidade,
+  CliquesPorDispositivo,
+  CliquesPorHora,
+  CliquesPorOrigem,
+  CliquesPorPais,
+  CliquesPorPlataforma,
+  Link,
+  RefererTop,
+  SegmentationMetrics
+} from '../../shared/models/link.model';
+import { environment } from '../../../environments/environment';
+
+Chart.register(CategoryScale, LinearScale, BarController, BarElement, Tooltip);
+
+@Component({
+  selector: 'app-dashboard',
+  standalone: true,
+  imports: [CommonModule, ReactiveFormsModule],
+  template: `
+    <div class="container">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px">
+        <h1>Dashboard de Links</h1>
+        <button (click)="logout()">Sair</button>
+      </div>
+
+      <section class="card" style="margin-bottom: 16px">
+        <h2>Criar link</h2>
+        <form [formGroup]="createForm" (ngSubmit)="createLink()" class="row">
+          <input formControlName="slug" placeholder="slug (ex: promocao-abril)" />
+          <input formControlName="urlDestino" placeholder="https://destino.com" />
+          <button [disabled]="createForm.invalid">Criar</button>
+        </form>
+      </section>
+
+      <section class="card" style="margin-bottom: 16px">
+        <h2>Links cadastrados</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Slug</th>
+              <th>URL de destino</th>
+              <th>Ação</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let link of links">
+              <td>{{ link.slug }}</td>
+              <td>
+                <input
+                  [value]="editValues[link._id] || link.urlDestino"
+                  (input)="onEditValue(link._id, $event)"
+                />
+              </td>
+              <td>
+                <button (click)="save(link)">Salvar destino</button>
+                <button style="margin-left: 8px" (click)="generateQr(link)">QR Code</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card" style="margin-bottom: 16px" *ngIf="selectedQrDataUrl">
+        <h2>QR Code do slug</h2>
+        <p style="margin-top: 0">{{ selectedShortUrl }}</p>
+        <img [src]="selectedQrDataUrl" alt="QR Code da URL curta" width="220" height="220" />
+        <div style="margin-top: 12px">
+          <button (click)="downloadQrPng()">Baixar QR (PNG)</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Cliques por dia (últimos {{ segmentationSelectedDays }} dias)</h2>
+        <div style="position: relative; width: 100%; height: 260px; max-height: 260px; overflow: hidden">
+          <canvas #chartCanvas></canvas>
+        </div>
+      </section>
+
+      <section class="card" style="margin-top: 16px">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+          <h2 style="margin: 0">Segmentação de cliques (últimos {{ segmentationPeriodoDias }} dias)</h2>
+          <div style="display: flex; align-items: center; gap: 8px">
+            <label for="periodo">Período:</label>
+            <select
+              id="periodo"
+              [value]="segmentationSelectedDays"
+              (change)="onSegmentationPeriodChange($event)"
+              [disabled]="loadingMetrics || loadingSegmentation"
+              style="padding: 8px; border: 1px solid #bfc7d8; border-radius: 6px"
+            >
+              <option [value]="7">7 dias</option>
+              <option [value]="15">15 dias</option>
+              <option [value]="30">30 dias</option>
+            </select>
+          </div>
+        </div>
+        <p *ngIf="loadingMetrics || loadingSegmentation" style="margin: 8px 0 0; color: #4b5563">
+          Atualizando métricas...
+        </p>
+        <p style="margin-top: 0">Total: {{ segmentationTotalCliques }}</p>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px">
+          <div>
+            <h3>Dispositivo</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th>Cliques</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let item of segmentationDispositivos">
+                  <td>{{ item.dispositivo }}</td>
+                  <td>{{ item.cliques }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div>
+            <h3>Origem</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Canal</th>
+                  <th>Cliques</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let item of segmentationOrigens">
+                  <td>{{ item.origem }}</td>
+                  <td>{{ item.cliques }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div>
+            <h3>Plataforma (Android/iPhone)</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Plataforma</th>
+                  <th>Cliques</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let item of segmentationPlataformas">
+                  <td>{{ item.plataforma }}</td>
+                  <td>{{ item.cliques }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div>
+            <h3>Países (top 10)</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>País</th>
+                  <th>Cliques</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let item of segmentationPaises">
+                  <td>{{ item.pais }}</td>
+                  <td>{{ item.cliques }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div>
+            <h3>Cidades (top 10)</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Cidade</th>
+                  <th>Cliques</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let item of segmentationCidades">
+                  <td>{{ item.cidade }}</td>
+                  <td>{{ item.cliques }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div>
+            <h3>Hora de acesso</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Hora</th>
+                  <th>Cliques</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let item of segmentationHoras">
+                  <td>{{ item.hora }}h</td>
+                  <td>{{ item.cliques }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div>
+            <h3>Referers (top 10)</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Referer</th>
+                  <th>Cliques</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let item of segmentationReferers">
+                  <td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">
+                    {{ item.referer }}
+                  </td>
+                  <td>{{ item.cliques }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <p class="error" *ngIf="error">{{ error }}</p>
+    </div>
+  `
+})
+export class DashboardComponent implements AfterViewInit, OnDestroy {
+  private readonly destroy$ = new Subject<void>();
+  private readonly fb = inject(FormBuilder);
+  private readonly linkService = inject(LinkService);
+  private readonly authService = inject(AuthService);
+  private readonly router = inject(Router);
+
+  @ViewChild('chartCanvas') chartCanvas?: ElementRef<HTMLCanvasElement>;
+
+  links: Link[] = [];
+  editValues: Record<string, string> = {};
+  chart?: Chart;
+  selectedQrDataUrl = '';
+  selectedShortUrl = '';
+  selectedSlug = '';
+  segmentationPeriodoDias = 7;
+  segmentationSelectedDays = 7;
+  segmentationTotalCliques = 0;
+  segmentationDispositivos: CliquesPorDispositivo[] = [];
+  segmentationPlataformas: CliquesPorPlataforma[] = [];
+  segmentationOrigens: CliquesPorOrigem[] = [];
+  segmentationPaises: CliquesPorPais[] = [];
+  segmentationCidades: CliquesPorCidade[] = [];
+  segmentationHoras: CliquesPorHora[] = [];
+  segmentationReferers: RefererTop[] = [];
+  loadingMetrics = false;
+  loadingSegmentation = false;
+  error = '';
+
+  createForm = this.fb.group({
+    slug: ['', [Validators.required, Validators.pattern(/^[a-z0-9-]{3,40}$/)]],
+    urlDestino: ['', [Validators.required, Validators.pattern(/^https?:\/\/.+/)]]
+  });
+
+  ngAfterViewInit(): void {
+    this.loadLinks();
+    this.loadMetrics();
+    this.loadSegmentation();
+  }
+
+  onEditValue(linkId: string, event: Event): void {
+    const target = event.target as HTMLInputElement;
+    this.editValues[linkId] = target.value;
+  }
+
+  createLink(): void {
+    if (this.createForm.invalid) {
+      return;
+    }
+
+    const value = this.createForm.getRawValue();
+    this.linkService
+      .create(value.slug!.trim().toLowerCase(), value.urlDestino!.trim())
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.createForm.reset();
+          this.loadLinks();
+        },
+        error: () => {
+          this.error = 'Erro ao criar link.';
+        }
+      });
+  }
+
+  save(link: Link): void {
+    const novoDestino = (this.editValues[link._id] ?? link.urlDestino).trim();
+    this.linkService
+      .updateDestino(link._id, novoDestino)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.loadLinks();
+        },
+        error: () => {
+          this.error = 'Erro ao atualizar destino.';
+        }
+      });
+  }
+
+  generateQr(link: Link): void {
+    const shortUrl = `${environment.shortBaseUrl}/${link.slug}`;
+
+    QRCode.toDataURL(shortUrl, { width: 220, margin: 1 })
+      .then((dataUrl: string) => {
+        this.selectedQrDataUrl = dataUrl;
+        this.selectedShortUrl = shortUrl;
+        this.selectedSlug = link.slug;
+        this.error = '';
+      })
+      .catch(() => {
+        this.error = 'Erro ao gerar QR Code.';
+      });
+  }
+
+  downloadQrPng(): void {
+    if (!this.selectedQrDataUrl) {
+      return;
+    }
+
+    const anchor = document.createElement('a');
+    anchor.href = this.selectedQrDataUrl;
+    anchor.download = `qrcode-${this.selectedSlug || 'slug'}.png`;
+    anchor.click();
+  }
+
+  logout(): void {
+    this.authService.logout();
+    this.router.navigate(['/login']);
+  }
+
+  private loadLinks(): void {
+    this.linkService
+      .list()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (links) => {
+          this.links = links;
+          this.error = '';
+        },
+        error: () => {
+          this.error = 'Erro ao carregar links.';
+        }
+      });
+  }
+
+  private loadMetrics(): void {
+    this.loadingMetrics = true;
+    this.linkService
+      .getLast7DaysMetrics(this.segmentationSelectedDays)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (items) => {
+          this.renderChart(items);
+          this.loadingMetrics = false;
+        },
+        error: () => {
+          this.error = 'Erro ao carregar métricas.';
+          this.loadingMetrics = false;
+        }
+      });
+  }
+
+  private loadSegmentation(): void {
+    this.loadingSegmentation = true;
+    this.linkService
+      .getSegmentationMetrics(this.segmentationSelectedDays)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (metrics: SegmentationMetrics) => {
+          this.segmentationPeriodoDias = metrics.periodoDias;
+          this.segmentationTotalCliques = metrics.totalCliques;
+          this.segmentationDispositivos = metrics.dispositivos;
+          this.segmentationPlataformas = metrics.plataformas;
+          this.segmentationOrigens = metrics.origens;
+          this.segmentationPaises = metrics.paises;
+          this.segmentationCidades = metrics.cidades;
+          this.segmentationHoras = metrics.horas;
+          this.segmentationReferers = metrics.referers;
+          this.loadingSegmentation = false;
+        },
+        error: () => {
+          this.error = 'Erro ao carregar segmentação.';
+          this.loadingSegmentation = false;
+        }
+      });
+  }
+
+  onSegmentationPeriodChange(event: Event): void {
+    const target = event.target as HTMLSelectElement;
+    const days = Number(target.value);
+    this.segmentationSelectedDays = [7, 15, 30].includes(days) ? days : 7;
+    this.loadMetrics();
+    this.loadSegmentation();
+  }
+
+  private renderChart(items: ClickByDay[]): void {
+    if (!this.chartCanvas) {
+      return;
+    }
+
+    this.chart?.destroy();
+
+    this.chart = new Chart(this.chartCanvas.nativeElement, {
+      type: 'bar',
+      data: {
+        labels: items.map((item) => item.dia),
+        datasets: [
+          {
+            label: 'Cliques',
+            data: items.map((item) => item.cliques)
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false
+      }
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+    this.chart?.destroy();
+  }
+}

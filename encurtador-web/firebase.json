@@ -1,0 +1,30 @@
+{
+  "hosting": {
+    "public": "dist/encurtador-web/browser",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "headers": [
+      {
+        "source": "/r/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store, no-cache, must-revalidate, max-age=0"
+          }
+        ]
+      }
+    ],
+    "rewrites": [
+      {
+        "source": "r/**",
+        "run": {
+          "serviceId": "encurtador-api",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}

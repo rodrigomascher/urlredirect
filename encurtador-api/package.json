@@ -1,0 +1,22 @@
+{
+  "name": "encurtador-api",
+  "version": "1.0.0",
+  "description": "API para encurtador de URLs dinâmico com métricas",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "geoip-lite": "^1.4.10",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.6.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}
