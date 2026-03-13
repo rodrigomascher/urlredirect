@@ -40,7 +40,7 @@ gcloud run deploy $SERVICE_API `
   --source .\encurtador-api `
   --region $REGION `
   --allow-unauthenticated `
-  --set-env-vars "MONGO_URI=SEU_MONGO_ATLAS_URI,JWT_SECRET=SEU_SEGREDO,JWT_EXPIRES_IN=1d,FRONTEND_URL=URL_DO_FIREBASE,ADMIN_EMAIL=admin@encurtador.local,ADMIN_PASSWORD=SENHA_ADMIN_FORTE"
+  --set-env-vars "MONGO_URI=SEU_MONGO_ATLAS_URI,JWT_SECRET=SEU_SEGREDO,JWT_EXPIRES_IN=1d,FRONTEND_URL=URL_DO_FIREBASE,ADMIN_EMAIL=admin@encurtador.local,ADMIN_PASSWORD_HASH=HASH_BCRYPT_DO_ADMIN"
 ```
 
 Pegue a URL gerada (exemplo):
@@ -114,7 +114,7 @@ gcloud run deploy $SERVICE_API `
   --source .\encurtador-api `
   --region $REGION `
   --allow-unauthenticated `
-  --set-env-vars "MONGO_URI=SEU_MONGO_ATLAS_URI,JWT_SECRET=SEU_SEGREDO,JWT_EXPIRES_IN=1d,FRONTEND_URL=https://fotoclick.web.app,ADMIN_EMAIL=admin@encurtador.local,ADMIN_PASSWORD=SENHA_ADMIN_FORTE"
+  --set-env-vars "MONGO_URI=SEU_MONGO_ATLAS_URI,JWT_SECRET=SEU_SEGREDO,JWT_EXPIRES_IN=1d,FRONTEND_URL=https://fotoclick.web.app,ADMIN_EMAIL=admin@encurtador.local,ADMIN_PASSWORD_HASH=HASH_BCRYPT_DO_ADMIN"
 ```
 
 - Teste:

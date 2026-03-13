@@ -101,7 +101,7 @@ const redirectBySlug = async (req, res) => {
   const city = normalizeText(geo?.city || '').toLowerCase();
   const horaAcesso = new Date().getHours();
 
-  await AccessLog.create({
+  void AccessLog.create({
     linkId: link._id,
     slug: link.slug,
     usuarioId: link.usuarioId,
@@ -119,6 +119,8 @@ const redirectBySlug = async (req, res) => {
     city,
     horaAcesso,
     criadoEm: new Date()
+  }).catch((error) => {
+    console.error('Falha ao registrar access log:', error.message);
   });
 
   return res.redirect(302, link.urlDestino);

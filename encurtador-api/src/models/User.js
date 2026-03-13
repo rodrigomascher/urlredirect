@@ -17,6 +17,12 @@ const userSchema = new mongoose.Schema(
     senhaHash: {
       type: String,
       required: true
+    },
+    role: {
+      type: String,
+      enum: ['admin', 'user'],
+      default: 'user',
+      index: true
     }
   },
   {

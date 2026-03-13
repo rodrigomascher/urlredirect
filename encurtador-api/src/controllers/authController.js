@@ -31,12 +31,12 @@ const register = async (req, res) => {
     }
 
     const senhaHash = await bcrypt.hash(senha, 10);
-    const user = await User.create({ nome, email: emailNormalizado, senhaHash });
-    const token = createToken({ id: user._id, email: user.email, role: 'user' });
+    const user = await User.create({ nome, email: emailNormalizado, senhaHash, role: 'user' });
+    const token = createToken({ id: user._id, email: user.email, role: user.role });
 
     return res.status(201).json({
       token,
-      usuario: { id: user._id, nome: user.nome, email: user.email, role: 'user' }
+      usuario: { id: user._id, nome: user.nome, email: user.email, role: user.role }
     });
   } catch (error) {
     return res.status(500).json({ message: 'Erro ao registrar usuário.' });
@@ -52,25 +52,6 @@ const login = async (req, res) => {
     }
 
     const emailNormalizado = email.toLowerCase().trim();
-    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@encurtador.local').toLowerCase().trim();
-    const adminPassword = process.env.ADMIN_PASSWORD || '';
-
-    if (emailNormalizado === adminEmail) {
-      if (!adminPassword || senha !== adminPassword) {
-        return res.status(401).json({ message: 'Credenciais inválidas.' });
-      }
-
-      const token = createToken({ id: 'admin', email: adminEmail, role: 'admin' });
-      return res.json({
-        token,
-        usuario: {
-          id: 'admin',
-          nome: 'Administrador',
-          email: adminEmail,
-          role: 'admin'
-        }
-      });
-    }
 
     const user = await User.findOne({ email: emailNormalizado });
     if (!user) {
@@ -82,8 +63,9 @@ const login = async (req, res) => {
       return res.status(401).json({ message: 'Credenciais inválidas.' });
     }
 
-    const token = createToken({ id: user._id, email: user.email, role: 'user' });
-    return res.json({ token, usuario: { id: user._id, nome: user.nome, email: user.email, role: 'user' } });
+    const role = user.role || 'user';
+    const token = createToken({ id: user._id, email: user.email, role });
+    return res.json({ token, usuario: { id: user._id, nome: user.nome, email: user.email, role } });
   } catch (error) {
     return res.status(500).json({ message: 'Erro ao autenticar usuário.' });
   }

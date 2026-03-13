@@ -1,6 +1,10 @@
 const jwt = require('jsonwebtoken');
 
 const authMiddleware = (req, res, next) => {
+  if (!process.env.JWT_SECRET) {
+    return res.status(500).json({ message: 'Configuração de autenticação inválida.' });
+  }
+
   const header = req.headers.authorization || '';
   const [type, token] = header.split(' ');
 

@@ -21,12 +21,13 @@ const createUser = async (req, res) => {
   }
 
   const senhaHash = await bcrypt.hash(String(senha), 10);
-  const user = await User.create({ nome: String(nome).trim(), email: emailNormalizado, senhaHash });
+  const user = await User.create({ nome: String(nome).trim(), email: emailNormalizado, senhaHash, role: 'user' });
 
   return res.status(201).json({
     id: user._id,
     nome: user.nome,
     email: user.email,
+    role: user.role,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt
   });

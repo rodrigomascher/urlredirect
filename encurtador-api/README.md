@@ -40,6 +40,8 @@ No acesso do slug, a API registra:
 
 ## Admin
 
-- Defina `ADMIN_EMAIL` e `ADMIN_PASSWORD` no `.env`.
-- Faça login em `POST /api/auth/login` com essas credenciais para receber token com perfil `admin`.
+- O `admin` agora é um usuário persistido no banco com `role: admin`.
+- No primeiro start, a API pode criar esse admin automaticamente se `ADMIN_EMAIL` e `ADMIN_PASSWORD_HASH` estiverem definidos no `.env`.
+- `ADMIN_PASSWORD` em texto puro ficou apenas como compatibilidade temporária de bootstrap; prefira `ADMIN_PASSWORD_HASH`.
+- Depois de criado no banco, o login de admin acontece normalmente em `POST /api/auth/login`.
 - Use o token admin para pré-cadastrar usuários do encurtador via `POST /api/admin/users`.

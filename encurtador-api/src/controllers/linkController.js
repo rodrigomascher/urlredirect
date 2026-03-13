@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const Link = require('../models/Link');
 const AccessLog = require('../models/AccessLog');
 
+const SLUG_REGEX = /^[a-z0-9-]{3,40}$/;
+
 const validarUrl = (url) => {
   try {
     const parsed = new URL(url);
@@ -21,23 +23,33 @@ const createLink = async (req, res) => {
   const usuarioId = req.usuario.id;
   const { slug, urlDestino } = req.body;
 
-  if (!slug || !urlDestino) {
+  if (typeof slug !== 'string' || typeof urlDestino !== 'string') {
     return res.status(400).json({ message: 'slug e urlDestino são obrigatórios.' });
   }
 
-  if (!validarUrl(urlDestino)) {
+  const slugNormalizado = slug.trim().toLowerCase();
+  const urlDestinoNormalizada = urlDestino.trim();
+
+  if (!SLUG_REGEX.test(slugNormalizado)) {
+    return res.status(400).json({ message: 'slug inválido. Use 3-40 caracteres [a-z0-9-].' });
+  }
+
+  if (!validarUrl(urlDestinoNormalizada)) {
     return res.status(400).json({ message: 'urlDestino inválida. Use http(s).' });
   }
 
-  const slugNormalizado = slug.trim().toLowerCase();
-
   try {
-    const link = await Link.create({ slug: slugNormalizado, urlDestino: urlDestino.trim(), usuarioId });
+    const link = await Link.create({ slug: slugNormalizado, urlDestino: urlDestinoNormalizada, usuarioId });
     return res.status(201).json(link);
   } catch (error) {
     if (error.code === 11000) {
       return res.status(409).json({ message: 'Slug já está em uso.' });
     }
+
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: 'Dados inválidos para criação do link.' });
+    }
+
     return res.status(500).json({ message: 'Erro ao criar link.' });
   }
 };
@@ -51,7 +63,7 @@ const updateLinkDestino = async (req, res) => {
     return res.status(400).json({ message: 'ID inválido.' });
   }
 
-  if (!urlDestino || !validarUrl(urlDestino)) {
+  if (typeof urlDestino !== 'string' || !validarUrl(urlDestino.trim())) {
     return res.status(400).json({ message: 'urlDestino inválida. Use http(s).' });
   }
 
