@@ -1,9 +1,26 @@
+export interface LinkRevisao {
+  revisao: number;
+  urlDestino: string;
+  inicioEm: string;
+  fimEm: string | null;
+  cliques: number;
+}
+
+export interface LinkRevisoes {
+  slug: string;
+  urlDestino: string;
+  revisaoAtual: number;
+  revisoes: LinkRevisao[];
+}
+
 export interface Link {
   _id: string;
   slug: string;
   urlDestino: string;
   usuarioId: string;
   dataCriacao: string;
+  revisaoAtual?: number;
+  revisoes?: LinkRevisao[];
 }
 
 export interface ClickByDay {

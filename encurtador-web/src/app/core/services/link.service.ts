@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { ClickByDay, Link, SegmentationMetrics } from '../../shared/models/link.model';
+import { ClickByDay, Link, LinkRevisoes, SegmentationMetrics } from '../../shared/models/link.model';
 
 @Injectable({ providedIn: 'root' })
 export class LinkService {
@@ -26,5 +26,9 @@ export class LinkService {
 
   getSegmentationMetrics(days = 7): Observable<SegmentationMetrics> {
     return this.http.get<SegmentationMetrics>(`${environment.apiUrl}/links/metrics/segmentation?days=${days}`);
+  }
+
+  getRevisions(id: string): Observable<LinkRevisoes> {
+    return this.http.get<LinkRevisoes>(`${environment.apiUrl}/links/${id}/revisoes`);
   }
 }

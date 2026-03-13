@@ -16,6 +16,8 @@ import {
   CliquesPorPais,
   CliquesPorPlataforma,
   Link,
+  LinkRevisao,
+  LinkRevisoes,
   RefererTop,
   SegmentationMetrics
 } from '../../shared/models/link.model';
@@ -65,7 +67,40 @@ Chart.register(CategoryScale, LinearScale, BarController, BarElement, Tooltip);
               <td>
                 <button (click)="save(link)">Salvar destino</button>
                 <button style="margin-left: 8px" (click)="generateQr(link)">QR Code</button>
+                <button style="margin-left: 8px" (click)="viewRevisions(link)">
+                  Revisões {{ link.revisaoAtual && link.revisaoAtual > 1 ? '(' + link.revisaoAtual + ')' : '' }}
+                </button>
               </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card" style="margin-bottom: 16px" *ngIf="selectedRevisions">
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <h2 style="margin: 0">Histórico de revisões — {{ selectedRevisions.slug }}</h2>
+          <button (click)="selectedRevisions = null">Fechar</button>
+        </div>
+        <p style="margin: 4px 0 12px; color: #4b5563">URL atual: {{ selectedRevisions.urlDestino }}</p>
+        <p *ngIf="loadingRevisions" style="color: #4b5563">Carregando...</p>
+        <table *ngIf="!loadingRevisions">
+          <thead>
+            <tr>
+              <th>Revisão</th>
+              <th>URL de destino</th>
+              <th>Início</th>
+              <th>Fim</th>
+              <th>Cliques</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let r of selectedRevisions.revisoes">
+              <td>Rev. {{ r.revisao }}</td>
+              <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"
+                  [title]="r.urlDestino">{{ r.urlDestino }}</td>
+              <td>{{ r.inicioEm | date:'dd/MM/yyyy HH:mm' }}</td>
+              <td>{{ r.fimEm ? (r.fimEm | date:'dd/MM/yyyy HH:mm') : 'atual' }}</td>
+              <td>{{ r.cliques }}</td>
             </tr>
           </tbody>
         </table>
@@ -260,6 +295,8 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   selectedQrDataUrl = '';
   selectedShortUrl = '';
   selectedSlug = '';
+  selectedRevisions: LinkRevisoes | null = null;
+  loadingRevisions = false;
   segmentationPeriodoDias = 7;
   segmentationSelectedDays = 7;
   segmentationTotalCliques = 0;
@@ -321,6 +358,28 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
         },
         error: () => {
           this.error = 'Erro ao atualizar destino.';
+        }
+      });
+  }
+
+  viewRevisions(link: Link): void {
+    if (this.selectedRevisions?.slug === link.slug) {
+      this.selectedRevisions = null;
+      return;
+    }
+    this.loadingRevisions = true;
+    this.selectedRevisions = null;
+    this.linkService
+      .getRevisions(link._id)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (data: LinkRevisoes) => {
+          this.selectedRevisions = data;
+          this.loadingRevisions = false;
+        },
+        error: () => {
+          this.error = 'Erro ao carregar revisões.';
+          this.loadingRevisions = false;
         }
       });
   }
