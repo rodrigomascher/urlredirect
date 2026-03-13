@@ -17,7 +17,7 @@ Este projeto está preparado para:
 No PowerShell, defina:
 
 ```powershell
-$PROJECT_ID="SEU_PROJECT_ID"
+$PROJECT_ID="fotoclick"
 $REGION="us-central1"
 $SERVICE_API="encurtador-api"
 ```
@@ -46,7 +46,7 @@ gcloud run deploy $SERVICE_API `
 Pegue a URL gerada (exemplo):
 
 ```text
-https://encurtador-api-xxxxx-uc.a.run.app
+https://encurtador-api-260475026422.us-central1.run.app
 ```
 
 ## 4) Ajustar frontend para usar a API publicada
@@ -54,17 +54,14 @@ https://encurtador-api-xxxxx-uc.a.run.app
 Edite:
 - `encurtador-web/src/environments/environment.prod.ts`
 
-Troque:
-- `SEU_BACKEND_CLOUD_RUN_URL`
-
-Por exemplo:
+Use exatamente:
 
 ```ts
-apiUrl: 'https://encurtador-api-xxxxx-uc.a.run.app/api',
-shortBaseUrl: 'https://SEU_PROJETO.web.app/r'
+apiUrl: 'https://encurtador-api-260475026422.us-central1.run.app/api',
+shortBaseUrl: 'https://fotoclick.web.app/r'
 ```
 
-Com isso, os links curtos ficam no frontend (ex.: `https://SEU_PROJETO.web.app/r/meu-slug`) e o Firebase faz rewrite de `r/**` para o Cloud Run.
+Com isso, os links curtos ficam no frontend (ex.: `https://fotoclick.web.app/r/meu-slug`) e o Firebase faz rewrite de `r/**` para o Cloud Run.
 
 ## 5) Build de produção do frontend
 
@@ -88,16 +85,18 @@ Inicializar hosting (uma vez):
 firebase use --add
 ```
 
+Quando perguntar o projeto, selecione `fotoclick`.
+
 Deploy:
 
 ```powershell
 firebase deploy --only hosting
 ```
 
-A URL final será algo como:
+A URL final é:
 
 ```text
-https://SEU_PROJETO.web.app
+https://fotoclick.web.app
 ```
 
 ## 7) Pós deploy (importante)
@@ -105,7 +104,17 @@ https://SEU_PROJETO.web.app
 - Atualize a variável `FRONTEND_URL` no Cloud Run com a URL do Firebase:
 
 ```powershell
-gcloud run services update $SERVICE_API --region $REGION --set-env-vars "FRONTEND_URL=https://SEU_PROJETO.web.app"
+gcloud run services update $SERVICE_API --region $REGION --set-env-vars "FRONTEND_URL=https://fotoclick.web.app"
+```
+
+- Se precisar redeployar a API, mantenha os valores reais e troque apenas segredos:
+
+```powershell
+gcloud run deploy $SERVICE_API `
+  --source .\encurtador-api `
+  --region $REGION `
+  --allow-unauthenticated `
+  --set-env-vars "MONGO_URI=SEU_MONGO_ATLAS_URI,JWT_SECRET=SEU_SEGREDO,JWT_EXPIRES_IN=1d,FRONTEND_URL=https://fotoclick.web.app,ADMIN_EMAIL=admin@encurtador.local,ADMIN_PASSWORD=SENHA_ADMIN_FORTE"
 ```
 
 - Teste:
