@@ -24,6 +24,10 @@
 **/yarn-debug.log*
 **/yarn-error.log*
 **/pnpm-debug.log*
+**/firebase-debug.log*
+
+# Firebase cache
+**/.firebase/
 
 # OS / editor
 .DS_Store
