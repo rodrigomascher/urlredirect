@@ -61,6 +61,10 @@ export class AuthService {
     this.router.navigate(['/login']);
   }
 
+  changePassword(senhaAtual: string, novaSenha: string): Observable<{ message: string }> {
+    return this.http.patch<{ message: string }>(`${environment.apiUrl}/auth/change-password`, { senhaAtual, novaSenha });
+  }
+
   private saveSession(token: string, usuario: Usuario): void {
     localStorage.setItem(this.tokenKey, token);
     localStorage.setItem(this.userKey, JSON.stringify(usuario));

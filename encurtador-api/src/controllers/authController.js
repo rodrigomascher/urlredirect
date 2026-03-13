@@ -71,4 +71,31 @@ const login = async (req, res) => {
   }
 };
 
-module.exports = { register, login };
+const changePassword = async (req, res) => {
+  const { senhaAtual, novaSenha } = req.body;
+
+  if (!senhaAtual || !novaSenha) {
+    return res.status(400).json({ message: 'senhaAtual e novaSenha são obrigatórias.' });
+  }
+
+  if (novaSenha.length < 6) {
+    return res.status(400).json({ message: 'novaSenha deve ter pelo menos 6 caracteres.' });
+  }
+
+  const user = await User.findById(req.usuario.id);
+  if (!user) {
+    return res.status(404).json({ message: 'Usuário não encontrado.' });
+  }
+
+  const senhaCorreta = await bcrypt.compare(senhaAtual, user.senhaHash);
+  if (!senhaCorreta) {
+    return res.status(401).json({ message: 'Senha atual incorreta.' });
+  }
+
+  user.senhaHash = await bcrypt.hash(novaSenha, 10);
+  await user.save();
+
+  return res.json({ message: 'Senha alterada com sucesso.' });
+};
+
+module.exports = { register, login, changePassword, changePassword };

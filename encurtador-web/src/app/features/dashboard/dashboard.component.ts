@@ -33,7 +33,10 @@ Chart.register(CategoryScale, LinearScale, BarController, BarElement, Tooltip);
     <div class="container">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px">
         <h1>Dashboard de Links</h1>
-        <button (click)="logout()">Sair</button>
+        <div style="display: flex; gap: 8px">
+          <button (click)="openChangePassword()">Alterar senha</button>
+          <button (click)="logout()">Sair</button>
+        </div>
       </div>
 
       <section class="card" style="margin-bottom: 16px">
@@ -289,6 +292,55 @@ Chart.register(CategoryScale, LinearScale, BarController, BarElement, Tooltip);
       </section>
 
       <p class="error" *ngIf="error">{{ error }}</p>
+
+      <!-- Modal: Alterar senha -->
+      <div
+        *ngIf="showChangePassword"
+        style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center"
+        (click)="closeChangePassword()"
+      >
+        <div
+          class="card"
+          style="width:100%;max-width:400px;margin:0 16px;position:relative"
+          (click)="$event.stopPropagation()"
+        >
+          <h2 style="margin-top:0">Alterar senha</h2>
+          <form [formGroup]="changePasswordForm" (ngSubmit)="submitChangePassword()">
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <input
+                type="password"
+                formControlName="senhaAtual"
+                placeholder="Senha atual"
+                autocomplete="current-password"
+              />
+              <input
+                type="password"
+                formControlName="novaSenha"
+                placeholder="Nova senha (mín. 6 caracteres)"
+                autocomplete="new-password"
+              />
+              <input
+                type="password"
+                formControlName="confirmarSenha"
+                placeholder="Confirmar nova senha"
+                autocomplete="new-password"
+              />
+              <p
+                *ngIf="changePasswordForm.errors?.['senhasNaoConferem'] && changePasswordForm.get('confirmarSenha')?.dirty"
+                style="color:#dc2626;margin:0;font-size:.85em"
+              >As senhas não conferem.</p>
+              <p *ngIf="changePasswordFeedback" [style.color]="changePasswordStatus === 'error' ? '#dc2626' : '#16a34a'" style="margin:0;font-size:.9em">{{ changePasswordFeedback }}</p>
+              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+                <button type="button" (click)="closeChangePassword()">Cancelar</button>
+                <button
+                  type="submit"
+                  [disabled]="changePasswordForm.invalid || changePasswordStatus === 'saving'"
+                >{{ changePasswordStatus === 'saving' ? 'Salvando...' : 'Confirmar' }}</button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
   `
 })
@@ -323,11 +375,29 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   loadingMetrics = false;
   loadingSegmentation = false;
   error = '';
+  showChangePassword = false;
+  changePasswordStatus: '' | 'saving' | 'saved' | 'error' = '';
+  changePasswordFeedback = '';
 
   createForm = this.fb.group({
     slug: ['', [Validators.required, Validators.pattern(/^[a-z0-9-]{3,40}$/)]],
     urlDestino: ['', [Validators.required, Validators.pattern(/^https?:\/\/.+/)]]
   });
+
+  changePasswordForm = this.fb.group(
+    {
+      senhaAtual: ['', Validators.required],
+      novaSenha: ['', [Validators.required, Validators.minLength(6)]],
+      confirmarSenha: ['', Validators.required]
+    },
+    {
+      validators: (group) => {
+        const nova = group.get('novaSenha')?.value;
+        const confirmar = group.get('confirmarSenha')?.value;
+        return nova && confirmar && nova !== confirmar ? { senhasNaoConferem: true } : null;
+      }
+    }
+  );
 
   ngAfterViewInit(): void {
     this.loadLinks();
@@ -425,6 +495,40 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
     anchor.href = this.selectedQrDataUrl;
     anchor.download = `qrcode-${this.selectedSlug || 'slug'}.png`;
     anchor.click();
+  }
+
+  openChangePassword(): void {
+    this.changePasswordForm.reset();
+    this.changePasswordStatus = '';
+    this.changePasswordFeedback = '';
+    this.showChangePassword = true;
+  }
+
+  closeChangePassword(): void {
+    this.showChangePassword = false;
+  }
+
+  submitChangePassword(): void {
+    if (this.changePasswordForm.invalid || this.changePasswordStatus === 'saving') {
+      return;
+    }
+    const { senhaAtual, novaSenha } = this.changePasswordForm.getRawValue();
+    this.changePasswordStatus = 'saving';
+    this.changePasswordFeedback = '';
+    this.authService
+      .changePassword(senhaAtual!, novaSenha!)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.changePasswordStatus = 'saved';
+          this.changePasswordFeedback = 'Senha alterada com sucesso!';
+          setTimeout(() => this.closeChangePassword(), 1800);
+        },
+        error: (err) => {
+          this.changePasswordStatus = 'error';
+          this.changePasswordFeedback = err?.error?.message || 'Erro ao alterar senha.';
+        }
+      });
   }
 
   logout(): void {
