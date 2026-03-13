@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Link = require('../models/Link');
 const AccessLog = require('../models/AccessLog');
+const slugCache = require('../config/slugCache');
 
 const SLUG_REGEX = /^[a-z0-9-]{3,40}$/;
 
@@ -102,6 +103,9 @@ const updateLinkDestino = async (req, res) => {
     { urlDestino: urlDestinoNova, revisaoAtual: novaRevisao, revisoes: revisoesFechadas },
     { new: true }
   );
+
+  // Invalida cache para que o próximo redirect use a nova URL
+  slugCache.invalidate(updated.slug);
 
   return res.json(updated);
 };

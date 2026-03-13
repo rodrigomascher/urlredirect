@@ -1,6 +1,7 @@
 const Link = require('../models/Link');
 const AccessLog = require('../models/AccessLog');
 const geoip = require('geoip-lite');
+const slugCache = require('../config/slugCache');
 
 const detectDevice = (userAgent) => {
   const ua = (userAgent || '').toLowerCase();
@@ -81,9 +82,25 @@ const redirectBySlug = async (req, res) => {
   const { slug } = req.params;
   const slugNormalizado = String(slug || '').toLowerCase().trim();
 
-  const link = await Link.findOne({ slug: slugNormalizado });
-  if (!link) {
-    return res.status(404).json({ message: 'Slug não encontrado.' });
+  // Tenta cache antes de ir ao banco
+  const cached = slugCache.get(slugNormalizado);
+  let urlDestino, revisaoAtual, linkId, usuarioId;
+
+  if (cached) {
+    urlDestino = cached.urlDestino;
+    revisaoAtual = cached.revisaoAtual;
+    linkId = cached.linkId;
+    usuarioId = cached.usuarioId;
+  } else {
+    const link = await Link.findOne({ slug: slugNormalizado });
+    if (!link) {
+      return res.status(404).json({ message: 'Slug não encontrado.' });
+    }
+    urlDestino = link.urlDestino;
+    revisaoAtual = link.revisaoAtual ?? 1;
+    linkId = link._id;
+    usuarioId = link.usuarioId;
+    slugCache.set(slugNormalizado, urlDestino, revisaoAtual, linkId, usuarioId);
   }
 
   const userAgent = req.headers['user-agent'] || '';
@@ -102,10 +119,10 @@ const redirectBySlug = async (req, res) => {
   const horaAcesso = new Date().getHours();
 
   void AccessLog.create({
-    linkId: link._id,
-    slug: link.slug,
-    revisao: link.revisaoAtual ?? 1,
-    usuarioId: link.usuarioId,
+    linkId,
+    slug: slugNormalizado,
+    revisao: revisaoAtual,
+    usuarioId,
     dispositivo,
     plataforma,
     userAgent,
@@ -124,7 +141,7 @@ const redirectBySlug = async (req, res) => {
     console.error('Falha ao registrar access log:', error.message);
   });
 
-  return res.redirect(302, link.urlDestino);
+  return res.redirect(302, urlDestino);
 };
 
 module.exports = { redirectBySlug };

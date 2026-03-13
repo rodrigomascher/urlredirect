@@ -10,6 +10,7 @@ const adminRoutes = require('./routes/adminRoutes');
 const redirectRoutes = require('./routes/redirectRoutes');
 
 const app = express();
+const slugCache = require('./config/slugCache');
 
 const configuredOrigins = String(process.env.FRONTEND_URL || '')
   .split(',')
@@ -45,7 +46,7 @@ app.use(
 app.use(express.json());
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', slugCacheSize: slugCache.size() });
 });
 
 app.use('/api/auth', authRoutes);
