@@ -65,7 +65,19 @@ Chart.register(CategoryScale, LinearScale, BarController, BarElement, Tooltip);
                 />
               </td>
               <td>
-                <button (click)="save(link)">Salvar destino</button>
+                <button (click)="save(link)" [disabled]="saveStatus[link._id] === 'saving'">Salvar destino</button>
+                <span
+                  *ngIf="saveStatus[link._id] === 'saving'"
+                  style="margin-left: 8px; color: #6b7280; font-size: 0.85em"
+                >Salvando...</span>
+                <span
+                  *ngIf="saveStatus[link._id] === 'saved'"
+                  style="margin-left: 8px; color: #16a34a; font-size: 0.85em"
+                >&#10003; Salvo!</span>
+                <span
+                  *ngIf="saveStatus[link._id] === 'error'"
+                  style="margin-left: 8px; color: #dc2626; font-size: 0.85em"
+                >&#10005; Erro ao salvar</span>
                 <button style="margin-left: 8px" (click)="generateQr(link)">QR Code</button>
                 <button style="margin-left: 8px" (click)="viewRevisions(link)">
                   Revisões {{ link.revisaoAtual && link.revisaoAtual > 1 ? '(' + link.revisaoAtual + ')' : '' }}
@@ -297,6 +309,7 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   selectedSlug = '';
   selectedRevisions: LinkRevisoes | null = null;
   loadingRevisions = false;
+  saveStatus: Record<string, 'saving' | 'saved' | 'error'> = {};
   segmentationPeriodoDias = 7;
   segmentationSelectedDays = 7;
   segmentationTotalCliques = 0;
@@ -349,15 +362,19 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
 
   save(link: Link): void {
     const novoDestino = (this.editValues[link._id] ?? link.urlDestino).trim();
+    this.saveStatus[link._id] = 'saving';
     this.linkService
       .updateDestino(link._id, novoDestino)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
+          this.saveStatus[link._id] = 'saved';
           this.loadLinks();
+          setTimeout(() => { delete this.saveStatus[link._id]; }, 3000);
         },
         error: () => {
-          this.error = 'Erro ao atualizar destino.';
+          this.saveStatus[link._id] = 'error';
+          setTimeout(() => { delete this.saveStatus[link._id]; }, 4000);
         }
       });
   }
