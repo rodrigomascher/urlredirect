@@ -14,6 +14,49 @@ const validarUrl = (url) => {
   }
 };
 
+const parseLinkIdsFromQuery = (query) => {
+  const rawValues = [];
+
+  const appendRawValue = (value) => {
+    if (typeof value !== 'string') {
+      return;
+    }
+
+    const normalized = value.trim();
+    if (normalized) {
+      rawValues.push(normalized);
+    }
+  };
+
+  appendRawValue(query.linkId);
+
+  if (Array.isArray(query.linkIds)) {
+    query.linkIds.forEach((value) => appendRawValue(String(value)));
+  } else if (typeof query.linkIds === 'string') {
+    query.linkIds.split(',').forEach((value) => appendRawValue(value));
+  }
+
+  const uniqueRawValues = [...new Set(rawValues)];
+  const validIds = uniqueRawValues.filter((value) => mongoose.Types.ObjectId.isValid(value));
+
+  return {
+    isRequested: uniqueRawValues.length > 0,
+    objectIds: validIds.map((value) => new mongoose.Types.ObjectId(value))
+  };
+};
+
+const buildPeriodLabels = (inicio, periodoDias) => {
+  const labels = [];
+
+  for (let i = 0; i < periodoDias; i += 1) {
+    const dia = new Date(inicio);
+    dia.setDate(inicio.getDate() + i);
+    labels.push(dia.toISOString().slice(0, 10));
+  }
+
+  return labels;
+};
+
 const listLinks = async (req, res) => {
   const usuarioId = req.usuario.id;
   const links = await Link.find({ usuarioId }).sort({ dataCriacao: -1 });
@@ -112,6 +155,7 @@ const updateLinkDestino = async (req, res) => {
 
 const getLast7DaysClicks = async (req, res) => {
   const usuarioId = req.usuario.id;
+  const usuarioObjectId = new mongoose.Types.ObjectId(usuarioId);
   const daysValue = Number(req.query.days || 7);
   const allowedDays = [7, 15, 30];
   const periodoDias = allowedDays.includes(daysValue) ? daysValue : 7;
@@ -122,51 +166,116 @@ const getLast7DaysClicks = async (req, res) => {
   inicio.setDate(inicio.getDate() - (periodoDias - 1));
   inicio.setHours(0, 0, 0, 0);
 
+  const { isRequested: hasLinkFilter, objectIds: linkObjectIds } = parseLinkIdsFromQuery(req.query);
+
+  if (hasLinkFilter && linkObjectIds.length === 0) {
+    return res.status(400).json({ message: 'linkId/linkIds inválido(s).' });
+  }
+
+  const comparisonMode = linkObjectIds.length > 1;
+
+  const labels = buildPeriodLabels(inicio, periodoDias);
+
   const matchBase = {
-    usuarioId: new mongoose.Types.ObjectId(usuarioId),
+    usuarioId: usuarioObjectId,
     criadoEm: { $gte: inicio, $lte: hoje }
   };
 
-  if (req.query.linkId && mongoose.Types.ObjectId.isValid(req.query.linkId)) {
-    matchBase.linkId = new mongoose.Types.ObjectId(req.query.linkId);
+  if (linkObjectIds.length === 1) {
+    matchBase.linkId = linkObjectIds[0];
+  } else if (linkObjectIds.length > 1) {
+    matchBase.linkId = { $in: linkObjectIds };
   }
 
   if (req.query.revisao !== undefined) {
     matchBase.revisao = Number(req.query.revisao);
   }
 
-  const aggregate = await AccessLog.aggregate([
-    {
-      $match: matchBase
-    },
-    {
-      $group: {
-        _id: {
-          $dateToString: { format: '%Y-%m-%d', date: '$criadoEm' }
-        },
-        cliques: { $sum: 1 }
+  if (!comparisonMode) {
+    const aggregate = await AccessLog.aggregate([
+      {
+        $match: matchBase
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: '%Y-%m-%d', date: '$criadoEm' }
+          },
+          cliques: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { _id: 1 }
       }
-    },
-    {
-      $sort: { _id: 1 }
-    }
-  ]);
+    ]);
 
-  const mapa = new Map(aggregate.map((item) => [item._id, item.cliques]));
-  const resultado = [];
+    const mapa = new Map(aggregate.map((item) => [item._id, item.cliques]));
+    const resultado = labels.map((dia) => ({ dia, cliques: mapa.get(dia) || 0 }));
 
-  for (let i = 0; i < periodoDias; i += 1) {
-    const dia = new Date(inicio);
-    dia.setDate(inicio.getDate() + i);
-    const chave = dia.toISOString().slice(0, 10);
-    resultado.push({ dia: chave, cliques: mapa.get(chave) || 0 });
+    return res.json(resultado);
   }
 
-  return res.json(resultado);
+  const [aggregate, selectedLinks] = await Promise.all([
+    AccessLog.aggregate([
+      {
+        $match: matchBase
+      },
+      {
+        $group: {
+          _id: {
+            dia: { $dateToString: { format: '%Y-%m-%d', date: '$criadoEm' } },
+            linkId: '$linkId'
+          },
+          cliques: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { '_id.dia': 1 }
+      }
+    ]),
+    Link.find({ _id: { $in: linkObjectIds }, usuarioId: usuarioObjectId }, { slug: 1 }).lean()
+  ]);
+
+  const linkSlugById = new Map(selectedLinks.map((item) => [String(item._id), item.slug]));
+  const orderedLinkIds = linkObjectIds
+    .map((id) => String(id))
+    .filter((id) => linkSlugById.has(id));
+
+  const clicksByLinkAndDay = new Map(
+    aggregate.map((item) => [`${String(item._id.linkId)}:${item._id.dia}`, item.cliques])
+  );
+
+  const series = orderedLinkIds.map((linkId) => {
+    const valores = labels.map((dia) => clicksByLinkAndDay.get(`${linkId}:${dia}`) || 0);
+    const totalCliques = valores.reduce((soma, atual) => soma + atual, 0);
+
+    return {
+      linkId,
+      slug: linkSlugById.get(linkId) || linkId,
+      valores,
+      totalCliques
+    };
+  });
+
+  const totaisPorDia = labels.map((dia, index) => ({
+    dia,
+    cliques: series.reduce((soma, item) => soma + (item.valores[index] || 0), 0)
+  }));
+
+  const totalCliques = totaisPorDia.reduce((soma, item) => soma + item.cliques, 0);
+
+  return res.json({
+    periodoDias,
+    labels,
+    totalCliques,
+    totaisPorDia,
+    series
+  });
 };
 
 const getSegmentationMetrics = async (req, res) => {
   const usuarioId = req.usuario.id;
+  const usuarioObjectId = new mongoose.Types.ObjectId(usuarioId);
   const daysValue = Number(req.query.days || 7);
   const allowedDays = [7, 15, 30];
   const periodoDias = allowedDays.includes(daysValue) ? daysValue : 7;
@@ -174,13 +283,21 @@ const getSegmentationMetrics = async (req, res) => {
   inicio.setDate(inicio.getDate() - (periodoDias - 1));
   inicio.setHours(0, 0, 0, 0);
 
+  const { isRequested: hasLinkFilter, objectIds: linkObjectIds } = parseLinkIdsFromQuery(req.query);
+
+  if (hasLinkFilter && linkObjectIds.length === 0) {
+    return res.status(400).json({ message: 'linkId/linkIds inválido(s).' });
+  }
+
   const baseMatch = {
-    usuarioId: new mongoose.Types.ObjectId(usuarioId),
+    usuarioId: usuarioObjectId,
     criadoEm: { $gte: inicio }
   };
 
-  if (req.query.linkId && mongoose.Types.ObjectId.isValid(req.query.linkId)) {
-    baseMatch.linkId = new mongoose.Types.ObjectId(req.query.linkId);
+  if (linkObjectIds.length === 1) {
+    baseMatch.linkId = linkObjectIds[0];
+  } else if (linkObjectIds.length > 1) {
+    baseMatch.linkId = { $in: linkObjectIds };
   }
 
   if (req.query.revisao !== undefined) {
@@ -239,6 +356,31 @@ const getSegmentationMetrics = async (req, res) => {
     AccessLog.countDocuments(baseMatch)
   ]);
 
+  let comparativoLinks = [];
+
+  if (linkObjectIds.length > 1) {
+    const [selectedLinks, clicksByLink] = await Promise.all([
+      Link.find({ _id: { $in: linkObjectIds }, usuarioId: usuarioObjectId }, { slug: 1 }).lean(),
+      AccessLog.aggregate([
+        { $match: baseMatch },
+        { $group: { _id: '$linkId', cliques: { $sum: 1 } } }
+      ])
+    ]);
+
+    const slugByLinkId = new Map(selectedLinks.map((item) => [String(item._id), item.slug]));
+    const clicksByLinkId = new Map(clicksByLink.map((item) => [String(item._id), item.cliques]));
+
+    comparativoLinks = linkObjectIds
+      .map((id) => String(id))
+      .filter((id) => slugByLinkId.has(id))
+      .map((id) => ({
+        linkId: id,
+        slug: slugByLinkId.get(id),
+        totalCliques: clicksByLinkId.get(id) || 0
+      }))
+      .sort((a, b) => b.totalCliques - a.totalCliques);
+  }
+
   return res.json({
     periodoDias,
     totalCliques: total,
@@ -248,7 +390,8 @@ const getSegmentationMetrics = async (req, res) => {
     paises: paises.map((item) => ({ pais: item._id || 'unknown', cliques: item.cliques })),
     cidades: cidades.map((item) => ({ cidade: item._id || 'unknown', cliques: item.cliques })),
     horas: horas.map((item) => ({ hora: Number.isInteger(item._id) ? item._id : 0, cliques: item.cliques })),
-    referers: referers.map((item) => ({ referer: item._id || 'unknown', cliques: item.cliques }))
+    referers: referers.map((item) => ({ referer: item._id || 'unknown', cliques: item.cliques })),
+    comparativoLinks
   });
 };
 

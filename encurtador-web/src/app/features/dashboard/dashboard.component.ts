@@ -2,13 +2,14 @@ import { CommonModule } from '@angular/common';
 import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Chart, CategoryScale, LinearScale, BarController, BarElement, Tooltip } from 'chart.js';
+import { Chart, CategoryScale, LinearScale, BarController, BarElement, Legend, Tooltip } from 'chart.js';
 import QRCode from 'qrcode';
-import { Subject, takeUntil } from 'rxjs';
+import { Subject, debounceTime, takeUntil } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { LinkService } from '../../core/services/link.service';
 import {
   ClickByDay,
+  ComparisonMetrics,
   CliquesPorCidade,
   CliquesPorDispositivo,
   CliquesPorHora,
@@ -23,7 +24,7 @@ import {
 } from '../../shared/models/link.model';
 import { environment } from '../../../environments/environment';
 
-Chart.register(CategoryScale, LinearScale, BarController, BarElement, Tooltip);
+Chart.register(CategoryScale, LinearScale, BarController, BarElement, Legend, Tooltip);
 
 @Component({
   selector: 'app-dashboard',
@@ -197,25 +198,33 @@ Chart.register(CategoryScale, LinearScale, BarController, BarElement, Tooltip);
         <section class="card">
           <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
             <h2 style="margin: 0">Cliques por dia (últimos {{ segmentationSelectedDays }} dias)</h2>
-            <div style="display: flex; align-items: center; gap: 8px">
-              <label for="slugFiltro">Slug:</label>
+            <div style="display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap">
+              <label for="slugFiltro" style="margin-top: 8px">Slugs:</label>
               <select
                 id="slugFiltro"
-                [value]="selectedMetricsLinkId"
-                (change)="onMetricsSlugChange($event)"
-                [disabled]="loadingMetrics || loadingSegmentation"
-                style="padding: 8px; border: 1px solid #bfc7d8; border-radius: 6px"
+                multiple
+                (change)="onMetricsSlugsChange($event)"
+                size="6"
+                style="padding: 8px; border: 1px solid #bfc7d8; border-radius: 6px; min-width: 240px"
               >
-                <option value="">Todos os slugs</option>
-                <option *ngFor="let link of links" [value]="link._id">{{ link.slug }}</option>
+                <option *ngFor="let link of links" [value]="link._id" [selected]="selectedMetricsLinkIds.includes(link._id)">
+                  {{ link.slug }}
+                </option>
               </select>
+              <button
+                type="button"
+                (click)="clearMetricsSlugSelection()"
+                [disabled]="selectedMetricsLinkIds.length === 0 || loadingMetrics || loadingSegmentation"
+                style="margin-top: 2px"
+              >Limpar</button>
             </div>
           </div>
+          <p style="margin: 6px 0 10px; color: #6b7280">Use Cmd/Ctrl para selecionar múltiplos slugs (máximo de 10).</p>
           <p style="margin: 6px 0 10px; color: #4b5563" *ngIf="selectedMetricsSlugLabel">
-            Indicadores filtrados por slug: <strong>{{ selectedMetricsSlugLabel }}</strong>
+            Indicadores filtrados por slug(s): <strong>{{ selectedMetricsSlugLabel }}</strong>
           </p>
           <p *ngIf="!loadingMetrics && !metricsHasData" style="margin: 6px 0 10px; color: #4b5563">
-            Nenhum clique encontrado no período{{ selectedMetricsSlugLabel ? ' para o slug selecionado' : '' }}.
+            Nenhum clique encontrado no período{{ selectedMetricsSlugLabel ? ' para os slugs selecionados' : '' }}.
           </p>
           <div style="position: relative; width: 100%; height: 260px; max-height: 260px; overflow: hidden">
             <canvas #chartCanvas></canvas>
@@ -244,6 +253,24 @@ Chart.register(CategoryScale, LinearScale, BarController, BarElement, Tooltip);
             Atualizando métricas...
           </p>
           <p style="margin-top: 0">Total: {{ segmentationTotalCliques }}</p>
+
+          <div *ngIf="segmentationComparativoLinks.length > 1" style="margin-bottom: 16px">
+            <h3>Comparativo por slug</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Slug</th>
+                  <th>Cliques</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let item of segmentationComparativoLinks">
+                  <td>{{ item.slug }}</td>
+                  <td>{{ item.totalCliques }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px">
             <div>
@@ -440,6 +467,8 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
 
   @ViewChild('chartCanvas') chartCanvas?: ElementRef<HTMLCanvasElement>;
 
+  private readonly metricsFilterTrigger$ = new Subject<void>();
+
   activeSection: 'links' | 'metrics' = 'links';
   links: Link[] = [];
   linksSearch = '';
@@ -447,14 +476,14 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   linksPageSize = 10;
   editValues: Record<string, string> = {};
   chart?: Chart;
-  lastMetricsItems: ClickByDay[] = [];
+  lastMetricsItems: ClickByDay[] | ComparisonMetrics = [];
   selectedQrDataUrl = '';
   selectedShortUrl = '';
   selectedSlug = '';
   selectedRevisions: LinkRevisoes | null = null;
   loadingRevisions = false;
   saveStatus: Record<string, 'saving' | 'saved' | 'error'> = {};
-  selectedMetricsLinkId = '';
+  selectedMetricsLinkIds: string[] = [];
   metricsHasData = true;
   segmentationPeriodoDias = 7;
   segmentationSelectedDays = 7;
@@ -466,6 +495,7 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   segmentationCidades: CliquesPorCidade[] = [];
   segmentationHoras: CliquesPorHora[] = [];
   segmentationReferers: RefererTop[] = [];
+  segmentationComparativoLinks: Array<{ linkId: string; slug: string; totalCliques: number }> = [];
   loadingMetrics = false;
   loadingSegmentation = false;
   error = '';
@@ -494,6 +524,11 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   );
 
   ngAfterViewInit(): void {
+    this.metricsFilterTrigger$.pipe(debounceTime(350), takeUntil(this.destroy$)).subscribe(() => {
+      this.loadMetrics();
+      this.loadSegmentation();
+    });
+
     this.route.paramMap.pipe(takeUntil(this.destroy$)).subscribe((params) => {
       const section = this.parseSectionFromRoute(params.get('section'));
 
@@ -507,7 +542,11 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
 
       if (section === 'metrics' && changed) {
         setTimeout(() => {
-          if (this.lastMetricsItems.length > 0) {
+          const hasCachedMetrics = Array.isArray(this.lastMetricsItems)
+            ? this.lastMetricsItems.length > 0
+            : this.lastMetricsItems.labels.length > 0;
+
+          if (hasCachedMetrics) {
             this.renderChart(this.lastMetricsItems);
           }
         }, 0);
@@ -731,8 +770,12 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
             this.linksPage = this.totalLinksPages;
           }
 
-          if (this.selectedMetricsLinkId && !this.links.some((link) => link._id === this.selectedMetricsLinkId)) {
-            this.selectedMetricsLinkId = '';
+          this.selectedMetricsLinkIds = this.selectedMetricsLinkIds.filter((selectedId) =>
+            this.links.some((link) => link._id === selectedId)
+          );
+
+          if (this.selectedMetricsLinkIds.length > 10) {
+            this.selectedMetricsLinkIds = this.selectedMetricsLinkIds.slice(0, 10);
           }
 
           this.loadMetrics();
@@ -749,17 +792,24 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   private loadMetrics(): void {
     this.loadingMetrics = true;
     this.linkService
-      .getLast7DaysMetrics(this.segmentationSelectedDays, this.selectedMetricsLinkId || undefined)
+      .getLast7DaysMetrics(this.segmentationSelectedDays, this.selectedMetricsLinkIds)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (items) => {
-          this.lastMetricsItems = items;
-          this.metricsHasData = items.some((item) => item.cliques > 0);
-          this.renderChart(items);
+        next: (response) => {
+          this.lastMetricsItems = response;
+
+          if (Array.isArray(response)) {
+            this.metricsHasData = response.some((item) => item.cliques > 0);
+          } else {
+            this.metricsHasData = response.totalCliques > 0;
+          }
+
+          this.renderChart(response);
           this.loadingMetrics = false;
         },
         error: () => {
           this.metricsHasData = false;
+          this.lastMetricsItems = [];
           this.error = 'Erro ao carregar métricas.';
           this.loadingMetrics = false;
         }
@@ -769,7 +819,7 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   private loadSegmentation(): void {
     this.loadingSegmentation = true;
     this.linkService
-      .getSegmentationMetrics(this.segmentationSelectedDays, this.selectedMetricsLinkId || undefined)
+      .getSegmentationMetrics(this.segmentationSelectedDays, this.selectedMetricsLinkIds)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (metrics: SegmentationMetrics) => {
@@ -782,9 +832,11 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
           this.segmentationCidades = metrics.cidades;
           this.segmentationHoras = metrics.horas;
           this.segmentationReferers = metrics.referers;
+          this.segmentationComparativoLinks = metrics.comparativoLinks || [];
           this.loadingSegmentation = false;
         },
         error: () => {
+          this.segmentationComparativoLinks = [];
           this.error = 'Erro ao carregar segmentação.';
           this.loadingSegmentation = false;
         }
@@ -799,43 +851,111 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
     this.loadSegmentation();
   }
 
-  onMetricsSlugChange(event: Event): void {
+  onMetricsSlugsChange(event: Event): void {
     const target = event.target as HTMLSelectElement;
-    this.selectedMetricsLinkId = target.value || '';
-    this.loadMetrics();
-    this.loadSegmentation();
+    const selectedValues = Array.from(target.selectedOptions).map((option) => option.value).filter(Boolean);
+
+    this.selectedMetricsLinkIds = selectedValues.slice(0, 10);
+    this.metricsFilterTrigger$.next();
+  }
+
+  clearMetricsSlugSelection(): void {
+    this.selectedMetricsLinkIds = [];
+    this.metricsFilterTrigger$.next();
   }
 
   get selectedMetricsSlugLabel(): string {
-    if (!this.selectedMetricsLinkId) {
+    if (this.selectedMetricsLinkIds.length === 0) {
       return '';
     }
 
-    const selected = this.links.find((link) => link._id === this.selectedMetricsLinkId);
-    return selected?.slug || '';
+    const selectedSlugs = this.links
+      .filter((link) => this.selectedMetricsLinkIds.includes(link._id))
+      .map((link) => link.slug);
+
+    if (selectedSlugs.length <= 3) {
+      return selectedSlugs.join(', ');
+    }
+
+    return `${selectedSlugs.slice(0, 3).join(', ')} +${selectedSlugs.length - 3}`;
   }
 
-  private renderChart(items: ClickByDay[]): void {
+  private getDatasetColors(index: number): { backgroundColor: string; borderColor: string } {
+    const palette = [
+      { backgroundColor: 'rgba(37, 99, 235, 0.5)', borderColor: 'rgba(37, 99, 235, 1)' },
+      { backgroundColor: 'rgba(16, 185, 129, 0.5)', borderColor: 'rgba(16, 185, 129, 1)' },
+      { backgroundColor: 'rgba(234, 88, 12, 0.5)', borderColor: 'rgba(234, 88, 12, 1)' },
+      { backgroundColor: 'rgba(220, 38, 38, 0.5)', borderColor: 'rgba(220, 38, 38, 1)' },
+      { backgroundColor: 'rgba(124, 58, 237, 0.5)', borderColor: 'rgba(124, 58, 237, 1)' },
+      { backgroundColor: 'rgba(14, 116, 144, 0.5)', borderColor: 'rgba(14, 116, 144, 1)' },
+      { backgroundColor: 'rgba(245, 158, 11, 0.5)', borderColor: 'rgba(245, 158, 11, 1)' },
+      { backgroundColor: 'rgba(219, 39, 119, 0.5)', borderColor: 'rgba(219, 39, 119, 1)' },
+      { backgroundColor: 'rgba(2, 132, 199, 0.5)', borderColor: 'rgba(2, 132, 199, 1)' },
+      { backgroundColor: 'rgba(22, 163, 74, 0.5)', borderColor: 'rgba(22, 163, 74, 1)' }
+    ];
+
+    return palette[index % palette.length];
+  }
+
+  private renderChart(items: ClickByDay[] | ComparisonMetrics): void {
     if (!this.chartCanvas) {
       return;
     }
 
     this.chart?.destroy();
 
+    if (Array.isArray(items)) {
+      this.chart = new Chart(this.chartCanvas.nativeElement, {
+        type: 'bar',
+        data: {
+          labels: items.map((item) => item.dia),
+          datasets: [
+            {
+              label: 'Cliques',
+              data: items.map((item) => item.cliques),
+              backgroundColor: 'rgba(37, 99, 235, 0.5)',
+              borderColor: 'rgba(37, 99, 235, 1)',
+              borderWidth: 1
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false
+        }
+      });
+
+      return;
+    }
+
+    const datasets = items.series.map((serie, index) => {
+      const colors = this.getDatasetColors(index);
+
+      return {
+        label: serie.slug,
+        data: serie.valores,
+        backgroundColor: colors.backgroundColor,
+        borderColor: colors.borderColor,
+        borderWidth: 1
+      };
+    });
+
     this.chart = new Chart(this.chartCanvas.nativeElement, {
       type: 'bar',
       data: {
-        labels: items.map((item) => item.dia),
-        datasets: [
-          {
-            label: 'Cliques',
-            data: items.map((item) => item.cliques)
-          }
-        ]
+        labels: items.labels,
+        datasets
       },
       options: {
         responsive: true,
-        maintainAspectRatio: false
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, position: 'top' }
+        },
+        scales: {
+          x: { stacked: false },
+          y: { stacked: false, beginAtZero: true }
+        }
       }
     });
   }
