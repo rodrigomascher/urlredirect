@@ -23,6 +23,11 @@ const userSchema = new mongoose.Schema(
       enum: ['admin', 'user'],
       default: 'user',
       index: true
+    },
+    ativo: {
+      type: Boolean,
+      default: true,
+      index: true
     }
   },
   {

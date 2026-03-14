@@ -8,8 +8,15 @@ export interface AdminUser {
   _id?: string;
   nome: string;
   email: string;
+  role?: 'admin' | 'user';
+  ativo?: boolean;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface AdminUserActionResponse {
+  action: 'deleted' | 'inactivated' | 'already_inactive';
+  message: string;
 }
 
 export interface AdminLink {
@@ -32,6 +39,10 @@ export class AdminService {
 
   createUser(nome: string, email: string, senha: string): Observable<AdminUser> {
     return this.http.post<AdminUser>(`${environment.apiUrl}/admin/users`, { nome, email, senha });
+  }
+
+  deleteOrInactivateUser(id: string): Observable<AdminUserActionResponse> {
+    return this.http.delete<AdminUserActionResponse>(`${environment.apiUrl}/admin/users/${id}`);
   }
 
   listLinks(): Observable<AdminLink[]> {

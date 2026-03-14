@@ -83,9 +83,47 @@ const deleteLink = async (req, res) => {
   return res.json({ message: 'Link excluído com sucesso.' });
 };
 
+const deleteOrInactivateUser = async (req, res) => {
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: 'ID inválido.' });
+  }
+
+  const user = await User.findById(id);
+  if (!user) {
+    return res.status(404).json({ message: 'Usuário não encontrado.' });
+  }
+
+  if (user.role === 'admin') {
+    return res.status(400).json({ message: 'Usuário admin não pode ser excluído nem inativado.' });
+  }
+
+  const hasLinks = await Link.exists({ usuarioId: user._id });
+
+  if (hasLinks) {
+    if (user.ativo === false) {
+      return res.json({ action: 'already_inactive', message: 'Usuário já está inativo.' });
+    }
+
+    user.ativo = false;
+    await user.save();
+    return res.json({
+      action: 'inactivated',
+      message: 'Usuário possui links cadastrados e foi inativado. Novos acessos estão bloqueados.'
+    });
+  }
+
+  await User.deleteOne({ _id: user._id });
+  await AccessLog.deleteMany({ usuarioId: user._id });
+
+  return res.json({ action: 'deleted', message: 'Usuário excluído com sucesso.' });
+};
+
 module.exports = {
   listUsers,
   createUser,
   listAllLinks,
-  deleteLink
+  deleteLink,
+  deleteOrInactivateUser
 };

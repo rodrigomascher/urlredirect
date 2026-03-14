@@ -1,5 +1,11 @@
 const express = require('express');
-const { listUsers, createUser, listAllLinks, deleteLink } = require('../controllers/adminController');
+const {
+	listUsers,
+	createUser,
+	listAllLinks,
+	deleteLink,
+	deleteOrInactivateUser
+} = require('../controllers/adminController');
 const { authMiddleware, requireAdmin } = require('../middleware/authMiddleware');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
@@ -9,6 +15,7 @@ router.use(authMiddleware, requireAdmin);
 
 router.get('/users', asyncHandler(listUsers));
 router.post('/users', asyncHandler(createUser));
+router.delete('/users/:id', asyncHandler(deleteOrInactivateUser));
 router.get('/links', asyncHandler(listAllLinks));
 router.delete('/links/:id', asyncHandler(deleteLink));
 

@@ -58,6 +58,10 @@ const login = async (req, res) => {
       return res.status(401).json({ message: 'Credenciais inválidas.' });
     }
 
+    if (user.ativo === false) {
+      return res.status(403).json({ message: 'Usuário inativo. Contate o administrador.' });
+    }
+
     const ok = await bcrypt.compare(senha, user.senhaHash);
     if (!ok) {
       return res.status(401).json({ message: 'Credenciais inválidas.' });
@@ -87,6 +91,10 @@ const changePassword = async (req, res) => {
     return res.status(404).json({ message: 'Usuário não encontrado.' });
   }
 
+  if (user.ativo === false) {
+    return res.status(403).json({ message: 'Usuário inativo. Contate o administrador.' });
+  }
+
   const senhaCorreta = await bcrypt.compare(senhaAtual, user.senhaHash);
   if (!senhaCorreta) {
     return res.status(401).json({ message: 'Senha atual incorreta.' });
@@ -98,4 +106,4 @@ const changePassword = async (req, res) => {
   return res.json({ message: 'Senha alterada com sucesso.' });
 };
 
-module.exports = { register, login, changePassword, changePassword };
+module.exports = { register, login, changePassword };

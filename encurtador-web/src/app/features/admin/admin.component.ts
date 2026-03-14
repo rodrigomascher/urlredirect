@@ -32,14 +32,25 @@ import { AdminService, AdminLink, AdminUser } from '../../core/services/admin.se
             <tr>
               <th>Nome</th>
               <th>Email</th>
+              <th>Status</th>
               <th>Criado em</th>
+              <th>Ação</th>
             </tr>
           </thead>
           <tbody>
             <tr *ngFor="let user of users">
               <td>{{ user.nome }}</td>
               <td>{{ user.email }}</td>
+              <td>{{ user.ativo === false ? 'Inativo' : 'Ativo' }}</td>
               <td>{{ user.createdAt | date: 'dd/MM/yyyy HH:mm' }}</td>
+              <td>
+                <button
+                  [disabled]="deletingUserId === user._id || user.role === 'admin'"
+                  (click)="confirmDeleteUser(user)"
+                >
+                  {{ deletingUserId === user._id ? 'Processando...' : 'Excluir/Inativar' }}
+                </button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -85,6 +96,7 @@ import { AdminService, AdminLink, AdminUser } from '../../core/services/admin.se
       </section>
 
       <p class="error" *ngIf="error">{{ error }}</p>
+      <p style="color: #065f46; margin-top: 8px" *ngIf="info">{{ info }}</p>
 
       <!-- Modal de confirmação de exclusão -->
       <div
@@ -126,7 +138,9 @@ export class AdminComponent implements OnInit {
   loading = false;
   loadingLinks = false;
   deletingId: string | null = null;
+  deletingUserId: string | null = null;
   linkParaExcluir: AdminLink | null = null;
+  info = '';
   error = '';
 
   form = this.fb.group({
@@ -147,6 +161,7 @@ export class AdminComponent implements OnInit {
 
     const { nome, email, senha } = this.form.getRawValue();
     this.loading = true;
+    this.info = '';
     this.error = '';
 
     this.adminService.createUser(nome!, email!, senha!).subscribe({
@@ -171,6 +186,41 @@ export class AdminComponent implements OnInit {
       },
       error: () => {
         this.error = 'Erro ao carregar usuários.';
+      }
+    });
+  }
+
+  confirmDeleteUser(user: AdminUser): void {
+    if (!user._id) {
+      return;
+    }
+
+    if (user.role === 'admin') {
+      this.error = 'Usuário admin não pode ser excluído/inativado.';
+      return;
+    }
+
+    const confirmado = window.confirm(
+      `Confirma a exclusão do usuário ${user.email}?\nSe ele possuir URLs cadastradas, será apenas inativado.`
+    );
+
+    if (!confirmado) {
+      return;
+    }
+
+    this.deletingUserId = user._id;
+    this.error = '';
+    this.info = '';
+
+    this.adminService.deleteOrInactivateUser(user._id).subscribe({
+      next: (result) => {
+        this.info = result.message;
+        this.loadUsers();
+        this.deletingUserId = null;
+      },
+      error: (err) => {
+        this.error = err?.error?.message || 'Erro ao processar usuário.';
+        this.deletingUserId = null;
       }
     });
   }

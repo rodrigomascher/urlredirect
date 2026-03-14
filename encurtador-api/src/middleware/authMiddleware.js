@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
-const authMiddleware = (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
   if (!process.env.JWT_SECRET) {
     return res.status(500).json({ message: 'Configuração de autenticação inválida.' });
   }
@@ -14,7 +15,17 @@ const authMiddleware = (req, res, next) => {
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    req.usuario = { id: payload.sub, email: payload.email, role: payload.role || 'user' };
+
+    const user = await User.findById(payload.sub, { _id: 1, email: 1, role: 1, ativo: 1 });
+    if (!user) {
+      return res.status(401).json({ message: 'Usuário do token não encontrado.' });
+    }
+
+    if (user.ativo === false) {
+      return res.status(403).json({ message: 'Usuário inativo. Acesso bloqueado.' });
+    }
+
+    req.usuario = { id: String(user._id), email: user.email, role: user.role || 'user' };
     return next();
   } catch (error) {
     return res.status(401).json({ message: 'Token expirado ou inválido.' });

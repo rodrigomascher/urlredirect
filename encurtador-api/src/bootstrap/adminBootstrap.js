@@ -27,10 +27,22 @@ const bootstrapAdminUser = async () => {
 
   const existingAdmin = await User.findOne({ email: adminEmail });
   if (existingAdmin) {
+    let changed = false;
+
     if (existingAdmin.role !== 'admin') {
       existingAdmin.role = 'admin';
-      await existingAdmin.save();
+      changed = true;
       console.log(`Usuário ${adminEmail} promovido para admin.`);
+    }
+
+    if (existingAdmin.ativo === false) {
+      existingAdmin.ativo = true;
+      changed = true;
+      console.log(`Usuário ${adminEmail} foi reativado para acesso administrativo.`);
+    }
+
+    if (changed) {
+      await existingAdmin.save();
     }
 
     return;
@@ -40,7 +52,8 @@ const bootstrapAdminUser = async () => {
     nome: 'Administrador',
     email: adminEmail,
     senhaHash,
-    role: 'admin'
+    role: 'admin',
+    ativo: true
   });
 
   console.log(`Admin inicial criado para ${adminEmail}.`);
