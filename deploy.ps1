@@ -107,6 +107,37 @@ if (-not $SkipBackend) {
 }
 
 # ---------------------------------------------------------------------------
+# Versão do build: AAAAMMDD.X
+# ---------------------------------------------------------------------------
+$versionFile = Join-Path $ROOT 'build-version.txt'
+$today       = (Get-Date).ToString('yyyyMMdd')
+
+if (Test-Path $versionFile) {
+    $lastVersion = (Get-Content $versionFile -Raw).Trim()
+    if ($lastVersion -match '^(\d{8})\.(\d+)$') {
+        if ($Matches[1] -eq $today) {
+            $buildCounter = [int]$Matches[2] + 1
+        } else {
+            $buildCounter = 1
+        }
+    } else {
+        $buildCounter = 1
+    }
+} else {
+    $buildCounter = 1
+}
+
+$buildVersion = "$today.$buildCounter"
+Set-Content -Path $versionFile -Value $buildVersion -NoNewline
+Write-Ok "Versão do build: $buildVersion"
+
+# Injeta a versão em environment.prod.ts antes de compilar
+$envProdPath = Join-Path $WEB_DIR 'src\environments\environment.prod.ts'
+$envProdContent = Get-Content $envProdPath -Raw
+$envProdContent = $envProdContent -replace "version:\s*'[^']*'", "version: '$buildVersion'"
+Set-Content -Path $envProdPath -Value $envProdContent -NoNewline
+
+# ---------------------------------------------------------------------------
 # 2. FRONTEND — Build Angular + Firebase Hosting
 # ---------------------------------------------------------------------------
 if (-not $SkipFrontend) {
@@ -164,6 +195,7 @@ if (-not $SkipFrontend) {
 Write-Host ''
 Write-Host '======================================================' -ForegroundColor Cyan
 Write-Host '  Deploy concluido com sucesso!' -ForegroundColor Green
+Write-Host "  Versão  : $buildVersion" -ForegroundColor White
 if ($backendUrl) {
     Write-Host "  Backend : $backendUrl" -ForegroundColor White
 }

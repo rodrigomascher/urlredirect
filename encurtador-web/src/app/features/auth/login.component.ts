@@ -3,6 +3,7 @@ import { Component, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-login',
@@ -25,6 +26,9 @@ import { AuthService } from '../../core/services/auth.service';
         <p style="font-size: 13px; color: #4b5563; margin-top: 12px">
           Usuários são pré-cadastrados pelo administrador.
         </p>
+        <p style="font-size: 11px; color: #9ca3af; margin-top: 16px; text-align: right">
+          v{{ version }}
+        </p>
       </div>
     </div>
   `
@@ -34,6 +38,7 @@ export class LoginComponent {
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
 
+  readonly version = environment.version;
   loading = false;
   error = '';
 
