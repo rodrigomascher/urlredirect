@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AuthService } from '../../core/services/auth.service';
-import { AdminService, AdminUser } from '../../core/services/admin.service';
+import { AdminService, AdminLink, AdminUser } from '../../core/services/admin.service';
 
 @Component({
   selector: 'app-admin',
@@ -11,7 +11,7 @@ import { AdminService, AdminUser } from '../../core/services/admin.service';
   template: `
     <div class="container">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px">
-        <h1>Admin · Pré-cadastro de usuários</h1>
+        <h1>Admin · Gestão do encurtador</h1>
         <button (click)="logout()">Sair</button>
       </div>
 
@@ -25,7 +25,7 @@ import { AdminService, AdminUser } from '../../core/services/admin.service';
         </form>
       </section>
 
-      <section class="card">
+      <section class="card" style="margin-bottom: 16px">
         <h2>Usuários cadastrados</h2>
         <table>
           <thead>
@@ -45,7 +45,74 @@ import { AdminService, AdminUser } from '../../core/services/admin.service';
         </table>
       </section>
 
+      <section class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px">
+          <h2 style="margin: 0">Todos os links</h2>
+          <span style="color: #4b5563; font-size: 0.9em">{{ links.length }} link(s)</span>
+        </div>
+        <p *ngIf="loadingLinks" style="color: #4b5563">Carregando...</p>
+        <table *ngIf="!loadingLinks">
+          <thead>
+            <tr>
+              <th>Slug</th>
+              <th>URL de destino</th>
+              <th>Usuário</th>
+              <th>Cliques</th>
+              <th>Rev.</th>
+              <th>Criado em</th>
+              <th>Ação</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let link of links">
+              <td><strong>{{ link.slug }}</strong></td>
+              <td style="max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"
+                  [title]="link.urlDestino">{{ link.urlDestino }}</td>
+              <td>{{ link.usuario?.email || '—' }}</td>
+              <td>{{ link.cliques }}</td>
+              <td>{{ link.revisaoAtual }}</td>
+              <td>{{ link.dataCriacao | date: 'dd/MM/yyyy' }}</td>
+              <td>
+                <button
+                  style="background: #dc2626; color: #fff; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer"
+                  [disabled]="deletingId === link._id"
+                  (click)="confirmDelete(link)"
+                >{{ deletingId === link._id ? 'Excluindo...' : 'Apagar' }}</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
       <p class="error" *ngIf="error">{{ error }}</p>
+
+      <!-- Modal de confirmação de exclusão -->
+      <div
+        *ngIf="linkParaExcluir"
+        style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center"
+        (click)="linkParaExcluir = null"
+      >
+        <div
+          class="card"
+          style="width:100%;max-width:420px;margin:0 16px"
+          (click)="$event.stopPropagation()"
+        >
+          <h2 style="margin-top:0;color:#dc2626">Confirmar exclusão</h2>
+          <p>Tem certeza que deseja apagar o link <strong>/{{ linkParaExcluir.slug }}</strong>?</p>
+          <p style="color:#4b5563;font-size:.9em;margin-top:0">
+            URL: {{ linkParaExcluir.urlDestino }}<br>
+            Cliques que serão apagados: <strong>{{ linkParaExcluir.cliques }}</strong>
+          </p>
+          <p style="color:#dc2626;font-size:.85em;margin-top:0">Esta ação não pode ser desfeita.</p>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button (click)="linkParaExcluir = null">Cancelar</button>
+            <button
+              style="background:#dc2626;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer"
+              (click)="deleteLink()"
+            >Confirmar exclusão</button>
+          </div>
+        </div>
+      </div>
     </div>
   `
 })
@@ -55,7 +122,11 @@ export class AdminComponent implements OnInit {
   private readonly authService = inject(AuthService);
 
   users: AdminUser[] = [];
+  links: AdminLink[] = [];
   loading = false;
+  loadingLinks = false;
+  deletingId: string | null = null;
+  linkParaExcluir: AdminLink | null = null;
   error = '';
 
   form = this.fb.group({
@@ -66,6 +137,7 @@ export class AdminComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadUsers();
+    this.loadLinks();
   }
 
   create(): void {
@@ -99,6 +171,44 @@ export class AdminComponent implements OnInit {
       },
       error: () => {
         this.error = 'Erro ao carregar usuários.';
+      }
+    });
+  }
+
+  loadLinks(): void {
+    this.loadingLinks = true;
+    this.adminService.listLinks().subscribe({
+      next: (links) => {
+        this.links = links;
+        this.loadingLinks = false;
+      },
+      error: () => {
+        this.error = 'Erro ao carregar links.';
+        this.loadingLinks = false;
+      }
+    });
+  }
+
+  confirmDelete(link: AdminLink): void {
+    this.linkParaExcluir = link;
+  }
+
+  deleteLink(): void {
+    if (!this.linkParaExcluir) {
+      return;
+    }
+    const id = this.linkParaExcluir._id;
+    this.deletingId = id;
+    this.linkParaExcluir = null;
+
+    this.adminService.deleteLink(id).subscribe({
+      next: () => {
+        this.links = this.links.filter((l) => l._id !== id);
+        this.deletingId = null;
+      },
+      error: () => {
+        this.error = 'Erro ao excluir link.';
+        this.deletingId = null;
       }
     });
   }

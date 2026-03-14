@@ -12,6 +12,16 @@ export interface AdminUser {
   updatedAt?: string;
 }
 
+export interface AdminLink {
+  _id: string;
+  slug: string;
+  urlDestino: string;
+  revisaoAtual: number;
+  dataCriacao: string;
+  cliques: number;
+  usuario: { _id: string; nome: string; email: string } | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AdminService {
   private readonly http = inject(HttpClient);
@@ -22,5 +32,13 @@ export class AdminService {
 
   createUser(nome: string, email: string, senha: string): Observable<AdminUser> {
     return this.http.post<AdminUser>(`${environment.apiUrl}/admin/users`, { nome, email, senha });
+  }
+
+  listLinks(): Observable<AdminLink[]> {
+    return this.http.get<AdminLink[]>(`${environment.apiUrl}/admin/links`);
+  }
+
+  deleteLink(id: string): Observable<{ message: string }> {
+    return this.http.delete<{ message: string }>(`${environment.apiUrl}/admin/links/${id}`);
   }
 }
