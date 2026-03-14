@@ -20,12 +20,22 @@ export class LinkService {
     return this.http.patch<Link>(`${environment.apiUrl}/links/${id}`, { urlDestino });
   }
 
-  getLast7DaysMetrics(days = 7): Observable<ClickByDay[]> {
-    return this.http.get<ClickByDay[]>(`${environment.apiUrl}/links/metrics/last-7-days?days=${days}`);
+  getLast7DaysMetrics(days = 7, linkId?: string): Observable<ClickByDay[]> {
+    const params = new URLSearchParams({ days: String(days) });
+    if (linkId) {
+      params.set('linkId', linkId);
+    }
+
+    return this.http.get<ClickByDay[]>(`${environment.apiUrl}/links/metrics/last-7-days?${params.toString()}`);
   }
 
-  getSegmentationMetrics(days = 7): Observable<SegmentationMetrics> {
-    return this.http.get<SegmentationMetrics>(`${environment.apiUrl}/links/metrics/segmentation?days=${days}`);
+  getSegmentationMetrics(days = 7, linkId?: string): Observable<SegmentationMetrics> {
+    const params = new URLSearchParams({ days: String(days) });
+    if (linkId) {
+      params.set('linkId', linkId);
+    }
+
+    return this.http.get<SegmentationMetrics>(`${environment.apiUrl}/links/metrics/segmentation?${params.toString()}`);
   }
 
   getRevisions(id: string): Observable<LinkRevisoes> {

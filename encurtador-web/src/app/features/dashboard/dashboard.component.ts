@@ -131,7 +131,25 @@ Chart.register(CategoryScale, LinearScale, BarController, BarElement, Tooltip);
       </section>
 
       <section class="card">
-        <h2>Cliques por dia (últimos {{ segmentationSelectedDays }} dias)</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+          <h2 style="margin: 0">Cliques por dia (últimos {{ segmentationSelectedDays }} dias)</h2>
+          <div style="display: flex; align-items: center; gap: 8px">
+            <label for="slugFiltro">Slug:</label>
+            <select
+              id="slugFiltro"
+              [value]="selectedMetricsLinkId"
+              (change)="onMetricsSlugChange($event)"
+              [disabled]="loadingMetrics || loadingSegmentation"
+              style="padding: 8px; border: 1px solid #bfc7d8; border-radius: 6px"
+            >
+              <option value="">Todos os slugs</option>
+              <option *ngFor="let link of links" [value]="link._id">{{ link.slug }}</option>
+            </select>
+          </div>
+        </div>
+        <p style="margin: 6px 0 10px; color: #4b5563" *ngIf="selectedMetricsSlugLabel">
+          Indicadores filtrados por slug: <strong>{{ selectedMetricsSlugLabel }}</strong>
+        </p>
         <div style="position: relative; width: 100%; height: 260px; max-height: 260px; overflow: hidden">
           <canvas #chartCanvas></canvas>
         </div>
@@ -362,6 +380,7 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   selectedRevisions: LinkRevisoes | null = null;
   loadingRevisions = false;
   saveStatus: Record<string, 'saving' | 'saved' | 'error'> = {};
+  selectedMetricsLinkId = '';
   segmentationPeriodoDias = 7;
   segmentationSelectedDays = 7;
   segmentationTotalCliques = 0;
@@ -543,6 +562,13 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
       .subscribe({
         next: (links) => {
           this.links = links;
+
+          if (this.selectedMetricsLinkId && !this.links.some((link) => link._id === this.selectedMetricsLinkId)) {
+            this.selectedMetricsLinkId = '';
+            this.loadMetrics();
+            this.loadSegmentation();
+          }
+
           this.error = '';
         },
         error: () => {
@@ -554,7 +580,7 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   private loadMetrics(): void {
     this.loadingMetrics = true;
     this.linkService
-      .getLast7DaysMetrics(this.segmentationSelectedDays)
+      .getLast7DaysMetrics(this.segmentationSelectedDays, this.selectedMetricsLinkId || undefined)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (items) => {
@@ -571,7 +597,7 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   private loadSegmentation(): void {
     this.loadingSegmentation = true;
     this.linkService
-      .getSegmentationMetrics(this.segmentationSelectedDays)
+      .getSegmentationMetrics(this.segmentationSelectedDays, this.selectedMetricsLinkId || undefined)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (metrics: SegmentationMetrics) => {
@@ -599,6 +625,22 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
     this.segmentationSelectedDays = [7, 15, 30].includes(days) ? days : 7;
     this.loadMetrics();
     this.loadSegmentation();
+  }
+
+  onMetricsSlugChange(event: Event): void {
+    const target = event.target as HTMLSelectElement;
+    this.selectedMetricsLinkId = target.value || '';
+    this.loadMetrics();
+    this.loadSegmentation();
+  }
+
+  get selectedMetricsSlugLabel(): string {
+    if (!this.selectedMetricsLinkId) {
+      return '';
+    }
+
+    const selected = this.links.find((link) => link._id === this.selectedMetricsLinkId);
+    return selected?.slug || '';
   }
 
   private renderChart(items: ClickByDay[]): void {
