@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Chart, CategoryScale, LinearScale, BarController, BarElement, Tooltip } from 'chart.js';
 import QRCode from 'qrcode';
 import { Subject, takeUntil } from 'rxjs';
@@ -40,277 +40,342 @@ Chart.register(CategoryScale, LinearScale, BarController, BarElement, Tooltip);
       </div>
 
       <section class="card" style="margin-bottom: 16px">
-        <h2>Criar link</h2>
-        <form [formGroup]="createForm" (ngSubmit)="createLink()" class="row">
-          <input formControlName="slug" placeholder="slug (ex: promocao-abril)" />
-          <input formControlName="urlDestino" placeholder="https://destino.com" />
-          <button [disabled]="createForm.invalid">Criar</button>
-        </form>
-      </section>
-
-      <section class="card" style="margin-bottom: 16px">
-        <h2>Links cadastrados</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Slug</th>
-              <th>URL de destino</th>
-              <th>Ação</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let link of links">
-              <td>{{ link.slug }}</td>
-              <td>
-                <input
-                  [value]="editValues[link._id] || link.urlDestino"
-                  (input)="onEditValue(link._id, $event)"
-                />
-              </td>
-              <td>
-                <button (click)="save(link)" [disabled]="saveStatus[link._id] === 'saving'">Salvar destino</button>
-                <span
-                  *ngIf="saveStatus[link._id] === 'saving'"
-                  style="margin-left: 8px; color: #6b7280; font-size: 0.85em"
-                >Salvando...</span>
-                <span
-                  *ngIf="saveStatus[link._id] === 'saved'"
-                  style="margin-left: 8px; color: #16a34a; font-size: 0.85em"
-                >&#10003; Salvo!</span>
-                <span
-                  *ngIf="saveStatus[link._id] === 'error'"
-                  style="margin-left: 8px; color: #dc2626; font-size: 0.85em"
-                >&#10005; Erro ao salvar</span>
-                <button style="margin-left: 8px" (click)="generateQr(link)">QR Code</button>
-                <button style="margin-left: 8px" (click)="viewRevisions(link)">
-                  Revisões {{ link.revisaoAtual && link.revisaoAtual > 1 ? '(' + link.revisaoAtual + ')' : '' }}
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <section class="card" style="margin-bottom: 16px" *ngIf="selectedRevisions">
-        <div style="display: flex; justify-content: space-between; align-items: center">
-          <h2 style="margin: 0">Histórico de revisões — {{ selectedRevisions.slug }}</h2>
-          <button (click)="selectedRevisions = null">Fechar</button>
-        </div>
-        <p style="margin: 4px 0 12px; color: #4b5563">URL atual: {{ selectedRevisions.urlDestino }}</p>
-        <p *ngIf="loadingRevisions" style="color: #4b5563">Carregando...</p>
-        <table *ngIf="!loadingRevisions">
-          <thead>
-            <tr>
-              <th>Revisão</th>
-              <th>URL de destino</th>
-              <th>Início</th>
-              <th>Fim</th>
-              <th>Cliques</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let r of selectedRevisions.revisoes">
-              <td>Rev. {{ r.revisao }}</td>
-              <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"
-                  [title]="r.urlDestino">{{ r.urlDestino }}</td>
-              <td>{{ r.inicioEm | date:'dd/MM/yyyy HH:mm' }}</td>
-              <td>{{ r.fimEm ? (r.fimEm | date:'dd/MM/yyyy HH:mm') : 'atual' }}</td>
-              <td>{{ r.cliques }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <section class="card" style="margin-bottom: 16px" *ngIf="selectedQrDataUrl">
-        <h2>QR Code do slug</h2>
-        <p style="margin-top: 0">{{ selectedShortUrl }}</p>
-        <img [src]="selectedQrDataUrl" alt="QR Code da URL curta" width="220" height="220" />
-        <div style="margin-top: 12px">
-          <button (click)="downloadQrPng()">Baixar QR (PNG)</button>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap">
+          <button
+            type="button"
+            (click)="setActiveSection('links')"
+            [style.background]="activeSection === 'links' ? '#1d4ed8' : '#f1f5f9'"
+            [style.color]="activeSection === 'links' ? '#ffffff' : '#1f2937'"
+            [style.border]="activeSection === 'links' ? '1px solid #1d4ed8' : '1px solid #cbd5e1'"
+            style="padding: 8px 14px; border-radius: 8px; cursor: pointer"
+          >Gestão de links</button>
+          <button
+            type="button"
+            (click)="setActiveSection('metrics')"
+            [style.background]="activeSection === 'metrics' ? '#1d4ed8' : '#f1f5f9'"
+            [style.color]="activeSection === 'metrics' ? '#ffffff' : '#1f2937'"
+            [style.border]="activeSection === 'metrics' ? '1px solid #1d4ed8' : '1px solid #cbd5e1'"
+            style="padding: 8px 14px; border-radius: 8px; cursor: pointer"
+          >Métricas e segmentação</button>
         </div>
       </section>
 
-      <section class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
-          <h2 style="margin: 0">Cliques por dia (últimos {{ segmentationSelectedDays }} dias)</h2>
-          <div style="display: flex; align-items: center; gap: 8px">
-            <label for="slugFiltro">Slug:</label>
+      <ng-container *ngIf="activeSection === 'links'">
+        <section class="card" style="margin-bottom: 16px">
+          <h2>Criar link</h2>
+          <form [formGroup]="createForm" (ngSubmit)="createLink()" class="row">
+            <input formControlName="slug" placeholder="slug (ex: promocao-abril)" />
+            <input formControlName="urlDestino" placeholder="https://destino.com" />
+            <button [disabled]="createForm.invalid">Criar</button>
+          </form>
+        </section>
+
+        <section class="card" style="margin-bottom: 16px">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+            <h2 style="margin: 0">Links cadastrados</h2>
+            <span style="color: #4b5563; font-size: 0.9em">{{ filteredLinks.length }} resultado(s)</span>
+          </div>
+
+          <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 12px 0">
+            <input
+              [value]="linksSearch"
+              (input)="onLinksSearch($event)"
+              placeholder="Buscar por slug ou URL de destino"
+              style="min-width: 260px"
+            />
+
+            <label for="linksPageSize">Itens por página:</label>
             <select
-              id="slugFiltro"
-              [value]="selectedMetricsLinkId"
-              (change)="onMetricsSlugChange($event)"
-              [disabled]="loadingMetrics || loadingSegmentation"
+              id="linksPageSize"
+              [value]="linksPageSize"
+              (change)="onLinksPageSizeChange($event)"
               style="padding: 8px; border: 1px solid #bfc7d8; border-radius: 6px"
             >
-              <option value="">Todos os slugs</option>
-              <option *ngFor="let link of links" [value]="link._id">{{ link.slug }}</option>
+              <option [value]="10">10</option>
+              <option [value]="25">25</option>
+              <option [value]="50">50</option>
             </select>
           </div>
-        </div>
-        <p style="margin: 6px 0 10px; color: #4b5563" *ngIf="selectedMetricsSlugLabel">
-          Indicadores filtrados por slug: <strong>{{ selectedMetricsSlugLabel }}</strong>
-        </p>
-        <p *ngIf="!loadingMetrics && !metricsHasData" style="margin: 6px 0 10px; color: #4b5563">
-          Nenhum clique encontrado no período{{ selectedMetricsSlugLabel ? ' para o slug selecionado' : '' }}.
-        </p>
-        <div style="position: relative; width: 100%; height: 260px; max-height: 260px; overflow: hidden">
-          <canvas #chartCanvas></canvas>
-        </div>
-      </section>
 
-      <section class="card" style="margin-top: 16px">
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
-          <h2 style="margin: 0">Segmentação de cliques (últimos {{ segmentationPeriodoDias }} dias)</h2>
-          <div style="display: flex; align-items: center; gap: 8px">
-            <label for="periodo">Período:</label>
-            <select
-              id="periodo"
-              [value]="segmentationSelectedDays"
-              (change)="onSegmentationPeriodChange($event)"
-              [disabled]="loadingMetrics || loadingSegmentation"
-              style="padding: 8px; border: 1px solid #bfc7d8; border-radius: 6px"
-            >
-              <option [value]="7">7 dias</option>
-              <option [value]="15">15 dias</option>
-              <option [value]="30">30 dias</option>
-            </select>
-          </div>
-        </div>
-        <p *ngIf="loadingMetrics || loadingSegmentation" style="margin: 8px 0 0; color: #4b5563">
-          Atualizando métricas...
-        </p>
-        <p style="margin-top: 0">Total: {{ segmentationTotalCliques }}</p>
+          <table *ngIf="paginatedLinks.length > 0; else noLinksState">
+            <thead>
+              <tr>
+                <th>Slug</th>
+                <th>URL de destino</th>
+                <th>Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let link of paginatedLinks">
+                <td>{{ link.slug }}</td>
+                <td>
+                  <input
+                    [value]="editValues[link._id] || link.urlDestino"
+                    (input)="onEditValue(link._id, $event)"
+                  />
+                </td>
+                <td>
+                  <button (click)="save(link)" [disabled]="saveStatus[link._id] === 'saving'">Salvar destino</button>
+                  <span
+                    *ngIf="saveStatus[link._id] === 'saving'"
+                    style="margin-left: 8px; color: #6b7280; font-size: 0.85em"
+                  >Salvando...</span>
+                  <span
+                    *ngIf="saveStatus[link._id] === 'saved'"
+                    style="margin-left: 8px; color: #16a34a; font-size: 0.85em"
+                  >&#10003; Salvo!</span>
+                  <span
+                    *ngIf="saveStatus[link._id] === 'error'"
+                    style="margin-left: 8px; color: #dc2626; font-size: 0.85em"
+                  >&#10005; Erro ao salvar</span>
+                  <button style="margin-left: 8px" (click)="generateQr(link)">QR Code</button>
+                  <button style="margin-left: 8px" (click)="viewRevisions(link)">
+                    Revisões {{ link.revisaoAtual && link.revisaoAtual > 1 ? '(' + link.revisaoAtual + ')' : '' }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px">
-          <div>
-            <h3>Dispositivo</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Tipo</th>
-                  <th>Cliques</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let item of segmentationDispositivos">
-                  <td>{{ item.dispositivo }}</td>
-                  <td>{{ item.cliques }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <ng-template #noLinksState>
+            <p style="margin: 10px 0 0; color: #4b5563">
+              Nenhum link encontrado{{ linksSearch ? ' para o filtro aplicado' : '' }}.
+            </p>
+          </ng-template>
 
-          <div>
-            <h3>Origem</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Canal</th>
-                  <th>Cliques</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let item of segmentationOrigens">
-                  <td>{{ item.origem }}</td>
-                  <td>{{ item.cliques }}</td>
-                </tr>
-              </tbody>
-            </table>
+          <div
+            *ngIf="totalLinksPages > 1"
+            style="display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 12px"
+          >
+            <button type="button" (click)="goToPreviousLinksPage()" [disabled]="linksPage <= 1">Anterior</button>
+            <span style="font-size: 0.9em; color: #4b5563">Página {{ linksPage }} de {{ totalLinksPages }}</span>
+            <button type="button" (click)="goToNextLinksPage()" [disabled]="linksPage >= totalLinksPages">Próxima</button>
           </div>
+        </section>
 
-          <div>
-            <h3>Plataforma (Android/iPhone)</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Plataforma</th>
-                  <th>Cliques</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let item of segmentationPlataformas">
-                  <td>{{ item.plataforma }}</td>
-                  <td>{{ item.cliques }}</td>
-                </tr>
-              </tbody>
-            </table>
+        <section class="card" style="margin-bottom: 16px" *ngIf="selectedRevisions">
+          <div style="display: flex; justify-content: space-between; align-items: center">
+            <h2 style="margin: 0">Histórico de revisões — {{ selectedRevisions.slug }}</h2>
+            <button (click)="selectedRevisions = null">Fechar</button>
           </div>
+          <p style="margin: 4px 0 12px; color: #4b5563">URL atual: {{ selectedRevisions.urlDestino }}</p>
+          <p *ngIf="loadingRevisions" style="color: #4b5563">Carregando...</p>
+          <table *ngIf="!loadingRevisions">
+            <thead>
+              <tr>
+                <th>Revisão</th>
+                <th>URL de destino</th>
+                <th>Início</th>
+                <th>Fim</th>
+                <th>Cliques</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let r of selectedRevisions.revisoes">
+                <td>Rev. {{ r.revisao }}</td>
+                <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"
+                    [title]="r.urlDestino">{{ r.urlDestino }}</td>
+                <td>{{ r.inicioEm | date:'dd/MM/yyyy HH:mm' }}</td>
+                <td>{{ r.fimEm ? (r.fimEm | date:'dd/MM/yyyy HH:mm') : 'atual' }}</td>
+                <td>{{ r.cliques }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
 
-          <div>
-            <h3>Países (top 10)</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>País</th>
-                  <th>Cliques</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let item of segmentationPaises">
-                  <td>{{ item.pais }}</td>
-                  <td>{{ item.cliques }}</td>
-                </tr>
-              </tbody>
-            </table>
+        <section class="card" style="margin-bottom: 16px" *ngIf="selectedQrDataUrl">
+          <h2>QR Code do slug</h2>
+          <p style="margin-top: 0">{{ selectedShortUrl }}</p>
+          <img [src]="selectedQrDataUrl" alt="QR Code da URL curta" width="220" height="220" />
+          <div style="margin-top: 12px">
+            <button (click)="downloadQrPng()">Baixar QR (PNG)</button>
           </div>
+        </section>
+      </ng-container>
 
-          <div>
-            <h3>Cidades (top 10)</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Cidade</th>
-                  <th>Cliques</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let item of segmentationCidades">
-                  <td>{{ item.cidade }}</td>
-                  <td>{{ item.cliques }}</td>
-                </tr>
-              </tbody>
-            </table>
+      <ng-container *ngIf="activeSection === 'metrics'">
+        <section class="card">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+            <h2 style="margin: 0">Cliques por dia (últimos {{ segmentationSelectedDays }} dias)</h2>
+            <div style="display: flex; align-items: center; gap: 8px">
+              <label for="slugFiltro">Slug:</label>
+              <select
+                id="slugFiltro"
+                [value]="selectedMetricsLinkId"
+                (change)="onMetricsSlugChange($event)"
+                [disabled]="loadingMetrics || loadingSegmentation"
+                style="padding: 8px; border: 1px solid #bfc7d8; border-radius: 6px"
+              >
+                <option value="">Todos os slugs</option>
+                <option *ngFor="let link of links" [value]="link._id">{{ link.slug }}</option>
+              </select>
+            </div>
           </div>
+          <p style="margin: 6px 0 10px; color: #4b5563" *ngIf="selectedMetricsSlugLabel">
+            Indicadores filtrados por slug: <strong>{{ selectedMetricsSlugLabel }}</strong>
+          </p>
+          <p *ngIf="!loadingMetrics && !metricsHasData" style="margin: 6px 0 10px; color: #4b5563">
+            Nenhum clique encontrado no período{{ selectedMetricsSlugLabel ? ' para o slug selecionado' : '' }}.
+          </p>
+          <div style="position: relative; width: 100%; height: 260px; max-height: 260px; overflow: hidden">
+            <canvas #chartCanvas></canvas>
+          </div>
+        </section>
 
-          <div>
-            <h3>Hora de acesso</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Hora</th>
-                  <th>Cliques</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let item of segmentationHoras">
-                  <td>{{ item.hora }}h</td>
-                  <td>{{ item.cliques }}</td>
-                </tr>
-              </tbody>
-            </table>
+        <section class="card" style="margin-top: 16px">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+            <h2 style="margin: 0">Segmentação de cliques (últimos {{ segmentationPeriodoDias }} dias)</h2>
+            <div style="display: flex; align-items: center; gap: 8px">
+              <label for="periodo">Período:</label>
+              <select
+                id="periodo"
+                [value]="segmentationSelectedDays"
+                (change)="onSegmentationPeriodChange($event)"
+                [disabled]="loadingMetrics || loadingSegmentation"
+                style="padding: 8px; border: 1px solid #bfc7d8; border-radius: 6px"
+              >
+                <option [value]="7">7 dias</option>
+                <option [value]="15">15 dias</option>
+                <option [value]="30">30 dias</option>
+              </select>
+            </div>
           </div>
+          <p *ngIf="loadingMetrics || loadingSegmentation" style="margin: 8px 0 0; color: #4b5563">
+            Atualizando métricas...
+          </p>
+          <p style="margin-top: 0">Total: {{ segmentationTotalCliques }}</p>
 
-          <div>
-            <h3>Referers (top 10)</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Referer</th>
-                  <th>Cliques</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let item of segmentationReferers">
-                  <td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">
-                    {{ item.referer }}
-                  </td>
-                  <td>{{ item.cliques }}</td>
-                </tr>
-              </tbody>
-            </table>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px">
+            <div>
+              <h3>Dispositivo</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Tipo</th>
+                    <th>Cliques</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let item of segmentationDispositivos">
+                    <td>{{ item.dispositivo }}</td>
+                    <td>{{ item.cliques }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <h3>Origem</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Canal</th>
+                    <th>Cliques</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let item of segmentationOrigens">
+                    <td>{{ item.origem }}</td>
+                    <td>{{ item.cliques }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <h3>Plataforma (Android/iPhone)</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Plataforma</th>
+                    <th>Cliques</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let item of segmentationPlataformas">
+                    <td>{{ item.plataforma }}</td>
+                    <td>{{ item.cliques }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <h3>Países (top 10)</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>País</th>
+                    <th>Cliques</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let item of segmentationPaises">
+                    <td>{{ item.pais }}</td>
+                    <td>{{ item.cliques }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <h3>Cidades (top 10)</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Cidade</th>
+                    <th>Cliques</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let item of segmentationCidades">
+                    <td>{{ item.cidade }}</td>
+                    <td>{{ item.cliques }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <h3>Hora de acesso</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Hora</th>
+                    <th>Cliques</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let item of segmentationHoras">
+                    <td>{{ item.hora }}h</td>
+                    <td>{{ item.cliques }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <h3>Referers (top 10)</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Referer</th>
+                    <th>Cliques</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let item of segmentationReferers">
+                    <td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">
+                      {{ item.referer }}
+                    </td>
+                    <td>{{ item.cliques }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </ng-container>
 
       <p class="error" *ngIf="error">{{ error }}</p>
 
@@ -371,12 +436,18 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   private readonly linkService = inject(LinkService);
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   @ViewChild('chartCanvas') chartCanvas?: ElementRef<HTMLCanvasElement>;
 
+  activeSection: 'links' | 'metrics' = 'links';
   links: Link[] = [];
+  linksSearch = '';
+  linksPage = 1;
+  linksPageSize = 10;
   editValues: Record<string, string> = {};
   chart?: Chart;
+  lastMetricsItems: ClickByDay[] = [];
   selectedQrDataUrl = '';
   selectedShortUrl = '';
   selectedSlug = '';
@@ -423,7 +494,98 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   );
 
   ngAfterViewInit(): void {
+    this.route.paramMap.pipe(takeUntil(this.destroy$)).subscribe((params) => {
+      const section = this.parseSectionFromRoute(params.get('section'));
+
+      if (!section) {
+        void this.router.navigate(['/dashboard/links'], { replaceUrl: true });
+        return;
+      }
+
+      const changed = this.activeSection !== section;
+      this.activeSection = section;
+
+      if (section === 'metrics' && changed) {
+        setTimeout(() => {
+          if (this.lastMetricsItems.length > 0) {
+            this.renderChart(this.lastMetricsItems);
+          }
+        }, 0);
+
+        if (this.links.length > 0) {
+          this.loadMetrics();
+          this.loadSegmentation();
+        }
+      }
+    });
+
     this.loadLinks();
+  }
+
+  setActiveSection(section: 'links' | 'metrics'): void {
+    if (this.activeSection === section) {
+      return;
+    }
+
+    const routeSection = section === 'metrics' ? 'metricas' : 'links';
+    void this.router.navigate(['/dashboard', routeSection]);
+  }
+
+  private parseSectionFromRoute(section: string | null): 'links' | 'metrics' | null {
+    if (section === 'links') {
+      return 'links';
+    }
+
+    if (section === 'metricas') {
+      return 'metrics';
+    }
+
+    return null;
+  }
+
+  onLinksSearch(event: Event): void {
+    const target = event.target as HTMLInputElement;
+    this.linksSearch = target.value;
+    this.linksPage = 1;
+  }
+
+  onLinksPageSizeChange(event: Event): void {
+    const target = event.target as HTMLSelectElement;
+    const pageSize = Number(target.value);
+    this.linksPageSize = [10, 25, 50].includes(pageSize) ? pageSize : 10;
+    this.linksPage = 1;
+  }
+
+  goToPreviousLinksPage(): void {
+    if (this.linksPage > 1) {
+      this.linksPage -= 1;
+    }
+  }
+
+  goToNextLinksPage(): void {
+    if (this.linksPage < this.totalLinksPages) {
+      this.linksPage += 1;
+    }
+  }
+
+  get filteredLinks(): Link[] {
+    const term = this.linksSearch.trim().toLowerCase();
+    if (!term) {
+      return this.links;
+    }
+
+    return this.links.filter((link) => {
+      return link.slug.toLowerCase().includes(term) || link.urlDestino.toLowerCase().includes(term);
+    });
+  }
+
+  get totalLinksPages(): number {
+    return Math.max(1, Math.ceil(this.filteredLinks.length / this.linksPageSize));
+  }
+
+  get paginatedLinks(): Link[] {
+    const start = (this.linksPage - 1) * this.linksPageSize;
+    return this.filteredLinks.slice(start, start + this.linksPageSize);
   }
 
   onEditValue(linkId: string, event: Event): void {
@@ -565,6 +727,10 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
         next: (links) => {
           this.links = links;
 
+          if (this.linksPage > this.totalLinksPages) {
+            this.linksPage = this.totalLinksPages;
+          }
+
           if (this.selectedMetricsLinkId && !this.links.some((link) => link._id === this.selectedMetricsLinkId)) {
             this.selectedMetricsLinkId = '';
           }
@@ -587,6 +753,7 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (items) => {
+          this.lastMetricsItems = items;
           this.metricsHasData = items.some((item) => item.cliques > 0);
           this.renderChart(items);
           this.loadingMetrics = false;

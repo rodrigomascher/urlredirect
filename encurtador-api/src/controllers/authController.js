@@ -2,6 +2,8 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
+const MIN_PASSWORD_LENGTH = 6;
+
 const createToken = ({ id, email, role }) =>
   jwt.sign(
     {
@@ -21,6 +23,10 @@ const register = async (req, res) => {
 
     if (!nome || !email || !senha) {
       return res.status(400).json({ message: 'nome, email e senha são obrigatórios.' });
+    }
+
+    if (typeof senha !== 'string' || senha.length < MIN_PASSWORD_LENGTH) {
+      return res.status(400).json({ message: `senha deve ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.` });
     }
 
     const emailNormalizado = email.toLowerCase().trim();
@@ -82,8 +88,12 @@ const changePassword = async (req, res) => {
     return res.status(400).json({ message: 'senhaAtual e novaSenha são obrigatórias.' });
   }
 
-  if (novaSenha.length < 6) {
-    return res.status(400).json({ message: 'novaSenha deve ter pelo menos 6 caracteres.' });
+  if (typeof senhaAtual !== 'string' || typeof novaSenha !== 'string') {
+    return res.status(400).json({ message: 'senhaAtual e novaSenha devem ser texto.' });
+  }
+
+  if (novaSenha.length < MIN_PASSWORD_LENGTH) {
+    return res.status(400).json({ message: `novaSenha deve ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.` });
   }
 
   const user = await User.findById(req.usuario.id);

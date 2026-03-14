@@ -1,7 +1,25 @@
 const Link = require('../models/Link');
 const AccessLog = require('../models/AccessLog');
+const User = require('../models/User');
 const geoip = require('geoip-lite');
 const slugCache = require('../config/slugCache');
+
+const parseBooleanEnv = (name, fallback = false) => {
+  const normalized = String(process.env[name] || '').trim().toLowerCase();
+
+  if (!normalized) {
+    return fallback;
+  }
+
+  return ['1', 'true', 'yes', 'on'].includes(normalized);
+};
+
+const BLOCK_INACTIVE_USER_REDIRECTS = parseBooleanEnv('BLOCK_INACTIVE_USER_REDIRECTS', false);
+
+const isUsuarioAtivo = async (usuarioId) => {
+  const user = await User.findById(usuarioId, { _id: 1, ativo: 1 });
+  return Boolean(user && user.ativo !== false);
+};
 
 const detectDevice = (userAgent) => {
   const ua = (userAgent || '').toLowerCase();
@@ -84,13 +102,16 @@ const redirectBySlug = async (req, res) => {
 
   // Tenta cache antes de ir ao banco
   const cached = slugCache.get(slugNormalizado);
-  let urlDestino, revisaoAtual, linkId, usuarioId;
+  let urlDestino, revisaoAtual, linkId, usuarioId, usuarioAtivo = true;
 
   if (cached) {
     urlDestino = cached.urlDestino;
     revisaoAtual = cached.revisaoAtual;
     linkId = cached.linkId;
     usuarioId = cached.usuarioId;
+    if (typeof cached.usuarioAtivo === 'boolean') {
+      usuarioAtivo = cached.usuarioAtivo;
+    }
   } else {
     const link = await Link.findOne({ slug: slugNormalizado });
     if (!link) {
@@ -100,7 +121,24 @@ const redirectBySlug = async (req, res) => {
     revisaoAtual = link.revisaoAtual ?? 1;
     linkId = link._id;
     usuarioId = link.usuarioId;
-    slugCache.set(slugNormalizado, urlDestino, revisaoAtual, linkId, usuarioId);
+
+    if (BLOCK_INACTIVE_USER_REDIRECTS) {
+      usuarioAtivo = await isUsuarioAtivo(usuarioId);
+    }
+
+    slugCache.set(slugNormalizado, urlDestino, revisaoAtual, linkId, usuarioId, usuarioAtivo);
+  }
+
+  if (BLOCK_INACTIVE_USER_REDIRECTS) {
+    // Compatibilidade com entradas antigas em memória (sem usuarioAtivo).
+    if (typeof cached?.usuarioAtivo !== 'boolean') {
+      usuarioAtivo = await isUsuarioAtivo(usuarioId);
+      slugCache.set(slugNormalizado, urlDestino, revisaoAtual, linkId, usuarioId, usuarioAtivo);
+    }
+
+    if (!usuarioAtivo) {
+      return res.status(404).json({ message: 'Slug não encontrado.' });
+    }
   }
 
   const userAgent = req.headers['user-agent'] || '';

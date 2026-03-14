@@ -5,6 +5,20 @@ const Link = require('../models/Link');
 const AccessLog = require('../models/AccessLog');
 const slugCache = require('../config/slugCache');
 
+const MIN_PASSWORD_LENGTH = 6;
+
+const parseBooleanEnv = (name, fallback = false) => {
+  const normalized = String(process.env[name] || '').trim().toLowerCase();
+
+  if (!normalized) {
+    return fallback;
+  }
+
+  return ['1', 'true', 'yes', 'on'].includes(normalized);
+};
+
+const BLOCK_INACTIVE_USER_REDIRECTS = parseBooleanEnv('BLOCK_INACTIVE_USER_REDIRECTS', false);
+
 const listUsers = async (req, res) => {
   const users = await User.find({}, { senhaHash: 0 }).sort({ createdAt: -1 });
   return res.json(users);
@@ -15,6 +29,10 @@ const createUser = async (req, res) => {
 
   if (!nome || !email || !senha) {
     return res.status(400).json({ message: 'nome, email e senha são obrigatórios.' });
+  }
+
+  if (typeof senha !== 'string' || senha.length < MIN_PASSWORD_LENGTH) {
+    return res.status(400).json({ message: `senha deve ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.` });
   }
 
   const emailNormalizado = String(email).toLowerCase().trim();
@@ -108,12 +126,21 @@ const deleteOrInactivateUser = async (req, res) => {
 
     user.ativo = false;
     await user.save();
+
+    // Remove slugs do cache para refletir imediatamente o novo status do usuário.
+    slugCache.invalidateByUserId(user._id);
+
+    const inactivationMessage = BLOCK_INACTIVE_USER_REDIRECTS
+      ? 'Usuário possui links cadastrados e foi inativado. O login no painel e o redirecionamento público foram bloqueados.'
+      : 'Usuário possui links cadastrados e foi inativado. O login no painel foi bloqueado.';
+
     return res.json({
       action: 'inactivated',
-      message: 'Usuário possui links cadastrados e foi inativado. Novos acessos estão bloqueados.'
+      message: inactivationMessage
     });
   }
 
+  slugCache.invalidateByUserId(user._id);
   await User.deleteOne({ _id: user._id });
   await AccessLog.deleteMany({ usuarioId: user._id });
 

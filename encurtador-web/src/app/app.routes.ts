@@ -8,8 +8,9 @@ import { userGuard } from './core/guards/user.guard';
 
 export const appRoutes: Routes = [
   { path: 'login', component: LoginComponent },
-  { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard, userGuard] },
+  { path: 'dashboard', pathMatch: 'full', redirectTo: 'dashboard/links' },
+  { path: 'dashboard/:section', component: DashboardComponent, canActivate: [authGuard, userGuard] },
   { path: 'admin', component: AdminComponent, canActivate: [authGuard, adminGuard] },
-  { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
-  { path: '**', redirectTo: 'dashboard' }
+  { path: '', pathMatch: 'full', redirectTo: 'dashboard/links' },
+  { path: '**', redirectTo: 'dashboard/links' }
 ];
