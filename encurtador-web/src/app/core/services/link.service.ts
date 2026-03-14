@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { ClickByDay, Link, LinkRevisoes, SegmentationMetrics } from '../../shared/models/link.model';
@@ -21,21 +21,21 @@ export class LinkService {
   }
 
   getLast7DaysMetrics(days = 7, linkId?: string): Observable<ClickByDay[]> {
-    const params = new URLSearchParams({ days: String(days) });
+    let params = new HttpParams().set('days', String(days));
     if (linkId) {
-      params.set('linkId', linkId);
+      params = params.set('linkId', linkId);
     }
 
-    return this.http.get<ClickByDay[]>(`${environment.apiUrl}/links/metrics/last-7-days?${params.toString()}`);
+    return this.http.get<ClickByDay[]>(`${environment.apiUrl}/links/metrics/last-7-days`, { params });
   }
 
   getSegmentationMetrics(days = 7, linkId?: string): Observable<SegmentationMetrics> {
-    const params = new URLSearchParams({ days: String(days) });
+    let params = new HttpParams().set('days', String(days));
     if (linkId) {
-      params.set('linkId', linkId);
+      params = params.set('linkId', linkId);
     }
 
-    return this.http.get<SegmentationMetrics>(`${environment.apiUrl}/links/metrics/segmentation?${params.toString()}`);
+    return this.http.get<SegmentationMetrics>(`${environment.apiUrl}/links/metrics/segmentation`, { params });
   }
 
   getRevisions(id: string): Observable<LinkRevisoes> {

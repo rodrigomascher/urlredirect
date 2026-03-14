@@ -150,6 +150,9 @@ Chart.register(CategoryScale, LinearScale, BarController, BarElement, Tooltip);
         <p style="margin: 6px 0 10px; color: #4b5563" *ngIf="selectedMetricsSlugLabel">
           Indicadores filtrados por slug: <strong>{{ selectedMetricsSlugLabel }}</strong>
         </p>
+        <p *ngIf="!loadingMetrics && !metricsHasData" style="margin: 6px 0 10px; color: #4b5563">
+          Nenhum clique encontrado no período{{ selectedMetricsSlugLabel ? ' para o slug selecionado' : '' }}.
+        </p>
         <div style="position: relative; width: 100%; height: 260px; max-height: 260px; overflow: hidden">
           <canvas #chartCanvas></canvas>
         </div>
@@ -381,6 +384,7 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
   loadingRevisions = false;
   saveStatus: Record<string, 'saving' | 'saved' | 'error'> = {};
   selectedMetricsLinkId = '';
+  metricsHasData = true;
   segmentationPeriodoDias = 7;
   segmentationSelectedDays = 7;
   segmentationTotalCliques = 0;
@@ -420,8 +424,6 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
 
   ngAfterViewInit(): void {
     this.loadLinks();
-    this.loadMetrics();
-    this.loadSegmentation();
   }
 
   onEditValue(linkId: string, event: Event): void {
@@ -565,9 +567,10 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
 
           if (this.selectedMetricsLinkId && !this.links.some((link) => link._id === this.selectedMetricsLinkId)) {
             this.selectedMetricsLinkId = '';
-            this.loadMetrics();
-            this.loadSegmentation();
           }
+
+          this.loadMetrics();
+          this.loadSegmentation();
 
           this.error = '';
         },
@@ -584,10 +587,12 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (items) => {
+          this.metricsHasData = items.some((item) => item.cliques > 0);
           this.renderChart(items);
           this.loadingMetrics = false;
         },
         error: () => {
+          this.metricsHasData = false;
           this.error = 'Erro ao carregar métricas.';
           this.loadingMetrics = false;
         }
